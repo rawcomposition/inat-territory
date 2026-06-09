@@ -3,6 +3,8 @@
  * Tweak these constants to change the area, grid resolution, and iNat user.
  */
 
+import type { Units, CellSize } from "./lib/territory";
+
 // --- Mapbox ---------------------------------------------------------------
 // Public access token, read from .env (VITE_MAPBOX_TOKEN=...)
 export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
@@ -11,13 +13,8 @@ export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
 export const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
 
 // --- Area of interest -----------------------------------------------------
-// Center of the search area, as [latitude, longitude] — the order you get
-// when copying a coordinate from Google Maps or iNaturalist.
-export const CENTER: [number, number] = [33.58403949535706, -117.1847174951999];
-
-// Internal [longitude, latitude] form used by Mapbox & GeoJSON, which expect
-// lng,lat order. Derived from CENTER — don't edit this directly.
-export const CENTER_LNGLAT: [number, number] = [CENTER[1], CENTER[0]];
+// The center is part of each user's territory (set in the UI / shared via URL),
+// not a config constant — there's no hardcoded fallback location.
 
 // Shape of the overall area the grid covers:
 //  - "hexagon": cells within a large hexagon — shares the honeycomb's 6-fold
@@ -35,10 +32,12 @@ export const AREA_HEX_ROTATION_DEG = 30;
 // Lower = fuller, chunkier disk; ~0.5 = balanced/roundest; higher = tighter.
 export const CELL_FILL_THRESHOLD = 0.5;
 
-// Size of the area, in kilometers. This is the center-to-vertex distance
-// (circumradius) for a hexagon, or the radius for a circle.
-// iNaturalist observations are queried within a circle of this radius.
-export const RADIUS_KM = 8;
+// Default radius suggested for a fresh territory, per display unit. Kept as
+// round numbers per unit (rather than converting one into the other) so the
+// editor never seeds an awkward value like "4.97 mi". This is the
+// center-to-vertex distance (circumradius) for a hexagon, or the radius for a
+// circle; iNaturalist observations are queried within a circle of this radius.
+export const DEFAULT_RADIUS: Record<Units, number> = { mi: 5, km: 8 };
 
 // Whether to draw the outline marking the area boundary on the map.
 export const SHOW_RADIUS = false;
@@ -57,16 +56,34 @@ export const RADIUS_STYLE = {
 // Smaller = more, finer cells. Larger = fewer, coarser cells.
 export const HEX_CELL_SIZE_KM = 0.5;
 
+// Cell-size categories offered in the editor → hexagon edge length in km.
+// Tweak these to change what "small / medium / large" mean.
+export const CELL_SIZE_KM: Record<CellSize, number> = {
+  small: 0.25,
+  medium: 0.5,
+  large: 1.0,
+};
+
+// Cell size used for a fresh territory.
+export const DEFAULT_CELL_SIZE: CellSize = "medium";
+
+// Default display units for a fresh territory: miles for US English, else km.
+export function defaultUnits(): Units {
+  return typeof navigator !== "undefined" && navigator.language === "en-US"
+    ? "mi"
+    : "km";
+}
+
 // Style of the honeycomb cell borders.
 export const HEX_BORDER_STYLE = {
   color: "#334155",
-  width: 1.25,
+  width: 0.75,
   opacity: 0.6,
 };
 
 // --- iNaturalist ----------------------------------------------------------
-// The iNat login (username) whose observations should light up cells.
-export const INAT_USERNAME = "rawcomposition";
+// The iNat login (username) whose observations light up cells is part of each
+// user's territory (set in the UI), not a config constant — no default user.
 
 // Max pages of observations to fetch (200 per page). Caps the prototype's
 // network usage for very prolific users.

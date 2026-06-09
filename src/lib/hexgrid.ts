@@ -110,18 +110,22 @@ export function buildHexGrid(
 
 /**
  * Tag each cell with the number of observations that fall inside it.
- * Returns a FeatureCollection ready to hand to a Mapbox GeoJSON source.
+ *
+ * Observations outside every cell (i.e. outside the hexagon boundary) are
+ * dropped: they're excluded from `matched`, so they neither render on the map
+ * nor count toward the stats. Returns the marked grid plus the matched subset.
  */
 export function markObservedCells(
   cells: HexCell[],
   observations: InatObservation[],
-): FeatureCollection<Polygon, HexCellProps> {
+): { grid: FeatureCollection<Polygon, HexCellProps>; matched: InatObservation[] } {
   // Reset counts (in case of re-run).
   for (const cell of cells) {
     cell.properties.count = 0
     cell.properties.highlighted = false
   }
 
+  const matched: InatObservation[] = []
   for (const obs of observations) {
     const pt = turf.point(obs.coords)
     // Linear scan is fine for prototype-scale grids/observation counts.
@@ -129,10 +133,11 @@ export function markObservedCells(
       if (turf.booleanPointInPolygon(pt, cell)) {
         cell.properties.count += 1
         cell.properties.highlighted = true
+        matched.push(obs)
         break
       }
     }
   }
 
-  return { type: "FeatureCollection", features: cells }
+  return { grid: { type: "FeatureCollection", features: cells }, matched }
 }

@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query"
-import { fetchObservations, type InatObservation } from "./inaturalist"
+import { useQuery } from "@tanstack/react-query";
+import { fetchObservations, type InatObservation } from "./inaturalist";
 
 /**
  * Cached query for a user's iNaturalist observations within a radius.
@@ -8,15 +8,12 @@ import { fetchObservations, type InatObservation } from "./inaturalist"
  * radius, or page cap produces a distinct cache entry (and previously fetched
  * combinations are served instantly from cache).
  */
-export function useObservations(
-  username: string,
-  center: [number, number],
-  radiusKm: number,
-  maxPages: number,
-) {
+export function useObservations(username: string, center: [number, number], radiusKm: number, maxPages: number) {
   return useQuery<InatObservation[]>({
     queryKey: ["inat-observations", username, center[0], center[1], radiusKm, maxPages],
     queryFn: () => fetchObservations(username, center, radiusKm, maxPages),
     enabled: Boolean(username),
-  })
+    staleTime: 1000 * 60 * 60, // 1 hour
+    gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
+  });
 }

@@ -7,11 +7,9 @@ import type { FeatureCollection, Point, Polygon } from "geojson"
 import {
   AREA_HEX_ROTATION_DEG,
   AREA_SHAPE,
-  CENTER_LNGLAT,
   HEX_BORDER_STYLE,
   MAP_STYLE,
   MAPBOX_TOKEN,
-  RADIUS_KM,
   RADIUS_STYLE,
   SHOW_RADIUS,
 } from "@/config"
@@ -21,12 +19,29 @@ const GRID_SOURCE = "hex-grid"
 const POINTS_SOURCE = "inat-points"
 const BOUNDARY_SOURCE = "area-boundary"
 
+// Framing used before there's any territory to show — centered on Central
+// America, [lng, lat].
+const WORLD_CENTER: [number, number] = [-85, 12]
+const WORLD_ZOOM = 1.2
+
+const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] }
+
 interface MapViewProps {
   grid: FeatureCollection<Polygon, HexCellProps>
   points: FeatureCollection<Point>
+  /** When false, cells without any finds are hidden. */
+  showIncomplete: boolean
+  /** Area center, [lng, lat]. Null when there's no active territory. */
+  center: [number, number] | null
+  /** Area radius / circumradius in kilometers. Null when there's no territory. */
+  radiusKm: number | null
 }
 
-export function MapView({ grid, points }: MapViewProps) {
+// Only show cells with a find. Used as a layer filter when incomplete cells
+// are toggled off; `null` clears the filter (show everything).
+const HIGHLIGHTED_ONLY: mapboxgl.FilterSpecification = ["get", "highlighted"]
+
+export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const loadedRef = useRef(false)
@@ -35,8 +50,14 @@ export function MapView({ grid, points }: MapViewProps) {
   // sources with whatever is current when the style finishes loading.
   const gridRef = useRef(grid)
   const pointsRef = useRef(points)
+  const showIncompleteRef = useRef(showIncomplete)
+  const centerRef = useRef(center)
+  const radiusKmRef = useRef(radiusKm)
   gridRef.current = grid
   pointsRef.current = points
+  showIncompleteRef.current = showIncomplete
+  centerRef.current = center
+  radiusKmRef.current = radiusKm
 
   // Init the map once.
   useEffect(() => {
@@ -46,8 +67,8 @@ export function MapView({ grid, points }: MapViewProps) {
     const map = new mapboxgl.Map({
       container: containerRef.current,
       style: MAP_STYLE,
-      center: CENTER_LNGLAT,
-      zoom: 11,
+      center: centerRef.current ?? WORLD_CENTER,
+      zoom: centerRef.current ? 11 : WORLD_ZOOM,
     })
     mapRef.current = map
     map.addControl(new mapboxgl.NavigationControl(), "top-right")
@@ -75,6 +96,12 @@ export function MapView({ grid, points }: MapViewProps) {
         },
       })
 
+      // Honour the current incomplete-cells toggle as soon as layers exist.
+      if (!showIncompleteRef.current) {
+        map.setFilter("hex-fill", HIGHLIGHTED_ONLY)
+        map.setFilter("hex-outline", HIGHLIGHTED_ONLY)
+      }
+
       // Observation points.
       map.addSource(POINTS_SOURCE, { type: "geojson", data: pointsRef.current })
       map.addLayer({
@@ -89,17 +116,23 @@ export function MapView({ grid, points }: MapViewProps) {
         },
       })
 
-      // Boundary of the area of interest (circle or hexagon).
-      const boundary = buildBoundary(
-        CENTER_LNGLAT,
-        RADIUS_KM,
-        AREA_SHAPE,
-        AREA_HEX_ROTATION_DEG,
-      )
+      // Boundary of the area of interest (circle or hexagon). Always added as a
+      // source — empty until there's a territory — so the center/radius effect
+      // can update it; the outline layer is still gated on SHOW_RADIUS.
+      const initialCenter = centerRef.current
+      const initialRadius = radiusKmRef.current
+      const boundary =
+        initialCenter && initialRadius != null
+          ? buildBoundary(
+              initialCenter,
+              initialRadius,
+              AREA_SHAPE,
+              AREA_HEX_ROTATION_DEG,
+            )
+          : EMPTY_FC
+      map.addSource(BOUNDARY_SOURCE, { type: "geojson", data: boundary })
 
-      // Optional boundary outline.
       if (SHOW_RADIUS) {
-        map.addSource(BOUNDARY_SOURCE, { type: "geojson", data: boundary })
         map.addLayer({
           id: "area-outline",
           type: "line",
@@ -115,11 +148,13 @@ export function MapView({ grid, points }: MapViewProps) {
         })
       }
 
-      // Frame the area.
-      map.fitBounds(turf.bbox(boundary) as [number, number, number, number], {
-        padding: 40,
-        duration: 0,
-      })
+      // Frame the area, if there is one.
+      if (initialCenter && initialRadius != null) {
+        map.fitBounds(turf.bbox(boundary) as [number, number, number, number], {
+          padding: 40,
+          duration: 0,
+        })
+      }
 
       loadedRef.current = true
     })
@@ -145,6 +180,34 @@ export function MapView({ grid, points }: MapViewProps) {
     const src = map.getSource(POINTS_SOURCE) as mapboxgl.GeoJSONSource | undefined
     src?.setData(points)
   }, [points])
+
+  // Show/hide cells without finds when the toggle changes.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current) return
+    const filter = showIncomplete ? null : HIGHLIGHTED_ONLY
+    map.setFilter("hex-fill", filter)
+    map.setFilter("hex-outline", filter)
+  }, [showIncomplete])
+
+  // Rebuild the boundary and reframe the map when the territory's center or
+  // radius changes (e.g. after the user saves an edit). `center`/`radiusKm` are
+  // memoized upstream, so this only fires on a real territory change.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current) return
+    const src = map.getSource(BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource | undefined
+    if (!center || radiusKm == null) {
+      src?.setData(EMPTY_FC)
+      return
+    }
+    const boundary = buildBoundary(center, radiusKm, AREA_SHAPE, AREA_HEX_ROTATION_DEG)
+    src?.setData(boundary)
+    map.fitBounds(turf.bbox(boundary) as [number, number, number, number], {
+      padding: 40,
+      duration: 600,
+    })
+  }, [center, radiusKm])
 
   if (!MAPBOX_TOKEN) {
     return (
