@@ -79,6 +79,16 @@ export function MapView({ grid, outline, points, showIncomplete, center, radiusK
     mapRef.current = map
     // Hide the compass (the double-arrow below the zoom buttons) everywhere.
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right")
+    // "Show my location" button — tracks the user's device location and keeps
+    // the dot centered while they move. Bottom-right, away from the nav buttons.
+    map.addControl(
+      new mapboxgl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showUserHeading: true,
+      }),
+      "bottom-right",
+    )
 
     map.on("load", () => {
       // Honeycomb grid — drawn right away, before observations load.
