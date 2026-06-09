@@ -151,10 +151,10 @@ function App() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden">
+    <div className="relative h-dvh w-screen overflow-hidden">
       <MapView grid={grid} outline={outline} points={points} showIncomplete={showIncomplete} center={center} radiusKm={rKm} />
 
-      <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-80">
+      <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-80">
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-2">
