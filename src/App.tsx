@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from "react"
 import { ChevronDown, ChevronUp, X } from "lucide-react"
 import type { FeatureCollection, Point } from "geojson"
 import { MapView } from "@/components/MapView"
+import { RingGauge } from "@/components/RingGauge"
 import { TerritoryEditor } from "@/components/TerritoryEditor"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,16 +16,18 @@ import {
   INAT_MAX_PAGES,
   MAPBOX_TOKEN,
 } from "@/config"
-import { buildHexGrid, markObservedCells } from "@/lib/hexgrid"
+import { buildCellsOutline, buildHexGrid, markObservedCells } from "@/lib/hexgrid"
 import { useObservations } from "@/lib/useObservations"
 import { useSettings } from "@/lib/settingsStore"
 import { useTerritoryStore } from "@/lib/territoryStore"
 import {
+  categoryLabel,
   cellSideKm,
   centerLngLat,
   defaultDraft,
   parseTerritoryFromUrl,
   radiusKm,
+  resolveYear,
   serializeTerritoryToUrl,
   territoryEquals,
   type Territory,
@@ -59,6 +62,14 @@ function App() {
   const rKm = useMemo(() => (active ? radiusKm(active) : null), [active])
   const cellKm = useMemo(() => (active ? cellSideKm(active) : null), [active])
 
+  // Observation filters fed to the iNat query. `year` resolves "current"/"last"
+  // to a concrete year; empty `categories` means all categories.
+  const year = useMemo(
+    () => (active ? resolveYear(active, new Date().getFullYear()) : null),
+    [active],
+  )
+  const categories = useMemo(() => active?.categories ?? [], [active])
+
   const cells = useMemo(
     () =>
       center && rKm != null && cellKm != null
@@ -73,6 +84,11 @@ function App() {
         : [],
     [center, rKm, cellKm],
   )
+
+  // Outer contour of the whole grid, drawn as a frame. Depends only on the
+  // cell geometry, so it's recomputed on a territory change, not when
+  // observations arrive.
+  const outline = useMemo(() => buildCellsOutline(cells), [cells])
 
   // Whether to draw cells without any finds — persisted in the settings store.
   const showIncomplete = useSettings((s) => s.showIncomplete)
@@ -89,6 +105,8 @@ function App() {
     center ?? [0, 0],
     rKm ?? 0,
     INAT_MAX_PAGES,
+    year,
+    categories,
   )
   const observations = useMemo(() => obs.data ?? [], [obs.data])
 
@@ -134,12 +152,15 @@ function App() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      <MapView grid={grid} points={points} showIncomplete={showIncomplete} center={center} radiusKm={rKm} />
+      <MapView grid={grid} outline={outline} points={points} showIncomplete={showIncomplete} center={center} radiusKm={rKm} />
 
       <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-80">
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-2">
-            <span>iNat Territory</span>
+            <span className="flex items-center gap-2">
+              <HexMark />
+              iNat Territory
+            </span>
             <div className="flex items-center gap-2">
               <StatusBadge state={obsState(obs)} />
               <button
@@ -169,37 +190,7 @@ function App() {
             />
           ) : active ? (
             <>
-              <Row
-                label="iNat user"
-                value={
-                  <a
-                    href={`https://www.inaturalist.org/observations?place_id=any&user_id=${encodeURIComponent(active.username)}&verifiable=any`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
-                  >
-                    @{active.username}
-                  </a>
-                }
-              />
-              <Row label="Center (lat, lng)" value={`${active.lat}, ${active.lng}`} />
-              <Row label="Radius" value={`${active.radius} ${active.units}`} />
-              <Row
-                label="Cell size"
-                value={active.cellSize[0].toUpperCase() + active.cellSize.slice(1)}
-              />
-
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={() => setEditing(true)}
-              >
-                Edit territory
-              </Button>
-
-              <hr className="border-border" />
-
+              {/* Progress hero — the ring gauge carries the headline number. */}
               {!MAPBOX_TOKEN ? (
                 <p className="text-destructive">
                   Missing VITE_MAPBOX_TOKEN — add it to your .env file.
@@ -209,20 +200,26 @@ function App() {
                   {obs.error instanceof Error ? obs.error.message : "Failed to load observations."}
                 </p>
               ) : (
-                <>
-                  <Row
-                    label="Observations"
-                    value={obs.isPending ? "loading…" : String(matched.length)}
-                  />
-                  <Row
-                    label="Progress"
-                    value={
-                      obs.isPending
-                        ? "—"
-                        : `${highlightedCells} / ${cells.length} (${coverage}%)`
-                    }
-                  />
-                </>
+                <div className="flex items-center gap-4 py-1">
+                  <RingGauge pct={coverage} muted={obs.isPending} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Cells claimed
+                    </div>
+                    <div className="mt-0.5 font-mono text-2xl font-bold tabular-nums">
+                      {obs.isPending ? "—" : highlightedCells}
+                      <span className="font-medium text-muted-foreground">
+                        {" "}/ {cells.length}
+                      </span>
+                    </div>
+                    <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-inat/10 px-2.5 py-1 text-xs font-semibold text-inat-strong">
+                      <span className="font-mono tabular-nums">
+                        {obs.isPending ? "…" : matched.length}
+                      </span>{" "}
+                      observations
+                    </span>
+                  </div>
+                </div>
               )}
 
               {!obscuredNoticeDismissed && (
@@ -241,15 +238,65 @@ function App() {
 
               <hr className="border-border" />
 
+              <div className="space-y-px">
+                <Row
+                  label="iNat user"
+                  value={
+                    <a
+                      href={`https://www.inaturalist.org/observations?place_id=any&user_id=${encodeURIComponent(active.username)}&verifiable=any`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-inat-strong underline-offset-2 hover:underline"
+                    >
+                      @{active.username}
+                    </a>
+                  }
+                />
+                <Row label="Center" value={`${active.lat}, ${active.lng}`} mono />
+                <Row label="Radius" value={`${active.radius} ${active.units}`} mono />
+                <Row
+                  label="Cell size"
+                  value={active.cellSize[0].toUpperCase() + active.cellSize.slice(1)}
+                />
+                <Row
+                  label="Year"
+                  value={active.year === "all" ? "All years" : String(year)}
+                />
+                <Row
+                  label="Categories"
+                  value={
+                    active.categories.length === 0
+                      ? "All"
+                      : active.categories.map(categoryLabel).join(", ")
+                  }
+                />
+              </div>
+
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => setEditing(true)}
+              >
+                Edit territory
+              </Button>
+
+              <hr className="border-border" />
+
               <div className="flex items-center justify-between gap-4">
-                <Label htmlFor="show-incomplete" className="text-muted-foreground">
-                  Show incomplete cells
-                </Label>
+                <div>
+                  <Label htmlFor="show-incomplete" className="font-medium">
+                    Show incomplete cells
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Outline cells you haven’t reached
+                  </p>
+                </div>
                 <Switch
                   id="show-incomplete"
                   checked={showIncomplete}
                   onCheckedChange={setShowIncomplete}
-                  className="data-checked:bg-green-600"
+                  className="data-checked:bg-inat"
                 />
               </div>
             </>
@@ -271,12 +318,36 @@ function obsState(obs: ReturnType<typeof useObservations>): ObsState {
   return "idle"
 }
 
-function Row({ label, value }: { label: string; value: ReactNode }) {
+function Row({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: ReactNode
+  /** Render the value in the mono face — for coordinates and measurements. */
+  mono?: boolean
+}) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium tabular-nums">{value}</span>
+    <div className="flex items-baseline justify-between gap-4 py-1.5">
+      <span className="shrink-0 whitespace-nowrap text-muted-foreground">{label}</span>
+      <span
+        className={`truncate text-right font-medium ${mono ? "font-mono tabular-nums" : ""}`}
+      >
+        {value}
+      </span>
     </div>
+  )
+}
+
+/** Small iNat-green hexagon — the app's honeycomb metaphor as a brand mark. */
+function HexMark() {
+  return (
+    <span
+      aria-hidden
+      className="size-3.5 shrink-0 bg-inat"
+      style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }}
+    />
   )
 }
 

@@ -1,5 +1,10 @@
 import * as turf from "@turf/turf"
-import type { Feature, FeatureCollection, Polygon } from "geojson"
+import type {
+  Feature,
+  FeatureCollection,
+  MultiLineString,
+  Polygon,
+} from "geojson"
 import type { InatObservation } from "./inaturalist"
 
 export interface HexCellProps {
@@ -106,6 +111,80 @@ export function buildHexGrid(
     }
   }
   return cells
+}
+
+/**
+ * Trace the outer contour of the kept cells as a frame outline.
+ *
+ * A polygon union (turf.union) is unreliable here: adjacent hexagons' shared
+ * vertices differ by floating-point noise, so the union leaves sliver gaps that
+ * render as spurious interior lines. Instead we work at the edge level — an
+ * interior edge is shared by exactly two cells, so it appears twice; a perimeter
+ * edge appears once. Keeping the once-only edges and chaining them into closed
+ * rings yields a clean outline that hugs the jagged hex border with no interior
+ * strokes. Depends only on grid geometry, so it's stable across observation
+ * updates and the incomplete-cells toggle.
+ */
+export function buildCellsOutline(
+  cells: HexCell[],
+): FeatureCollection<MultiLineString> {
+  if (cells.length === 0) return turf.featureCollection([])
+
+  // Quantize coordinates to ~1cm so floating-point-equal vertices collapse to
+  // the same key (distinct hex vertices are tens of metres apart, so they don't
+  // collide).
+  const key = (p: number[]) => `${Math.round(p[0] * 1e7)}|${Math.round(p[1] * 1e7)}`
+
+  // Count each undirected edge.
+  const edges = new Map<string, { a: number[]; b: number[]; n: number }>()
+  for (const cell of cells) {
+    const ring = cell.geometry.coordinates[0]
+    for (let i = 0; i < ring.length - 1; i++) {
+      const a = ring[i]
+      const b = ring[i + 1]
+      const ka = key(a)
+      const kb = key(b)
+      const id = ka < kb ? `${ka}/${kb}` : `${kb}/${ka}`
+      const seen = edges.get(id)
+      if (seen) seen.n++
+      else edges.set(id, { a, b, n: 1 })
+    }
+  }
+
+  const boundary = [...edges.values()].filter((e) => e.n === 1)
+  if (boundary.length === 0) return turf.featureCollection([])
+
+  // Chain boundary edges into closed rings so the stroke joins cleanly at
+  // corners (each boundary vertex meets exactly two boundary edges).
+  const adj = new Map<string, number[]>()
+  boundary.forEach((e, i) => {
+    for (const p of [e.a, e.b]) {
+      const k = key(p)
+      const arr = adj.get(k)
+      if (arr) arr.push(i)
+      else adj.set(k, [i])
+    }
+  })
+
+  const used = new Array(boundary.length).fill(false)
+  const lines: number[][][] = []
+  for (let start = 0; start < boundary.length; start++) {
+    if (used[start]) continue
+    used[start] = true
+    const path = [boundary[start].a, boundary[start].b]
+    for (;;) {
+      const tail = path[path.length - 1]
+      const tk = key(tail)
+      const next = (adj.get(tk) ?? []).find((i) => !used[i])
+      if (next == null) break
+      used[next] = true
+      const e = boundary[next]
+      path.push(key(e.a) === tk ? e.b : e.a)
+    }
+    lines.push(path)
+  }
+
+  return turf.featureCollection([turf.multiLineString(lines)])
 }
 
 /**

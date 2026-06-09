@@ -14,13 +14,17 @@ const API = "https://api.inaturalist.org/v1/observations"
 
 /**
  * Fetch a user's georeferenced observations within `radiusKm` of `center`.
- * Pages through results up to `maxPages` (200 results/page).
+ * Pages through results up to `maxPages` (200 results/page). `year` (when not
+ * null) limits results to that observation year; `categories` (when non-empty)
+ * limits to those iconic taxa.
  */
 export async function fetchObservations(
   username: string,
   center: [number, number],
   radiusKm: number,
   maxPages: number,
+  year: number | null,
+  categories: string[],
 ): Promise<InatObservation[]> {
   const [lng, lat] = center
   const perPage = 200
@@ -36,6 +40,8 @@ export async function fetchObservations(
     url.searchParams.set("per_page", String(perPage))
     url.searchParams.set("page", String(page))
     url.searchParams.set("order_by", "observed_on")
+    if (year != null) url.searchParams.set("year", String(year))
+    if (categories.length) url.searchParams.set("iconic_taxa", categories.join(","))
 
     const res = await fetch(url)
     if (!res.ok) {

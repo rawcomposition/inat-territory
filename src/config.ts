@@ -59,9 +59,9 @@ export const HEX_CELL_SIZE_KM = 0.5;
 // Cell-size categories offered in the editor → hexagon edge length in km.
 // Tweak these to change what "small / medium / large" mean.
 export const CELL_SIZE_KM: Record<CellSize, number> = {
-  small: 0.25,
-  medium: 0.5,
-  large: 1.0,
+  small: 0.5,
+  medium: 1.0,
+  large: 2.0,
 };
 
 // Cell size used for a fresh territory.
@@ -69,9 +69,7 @@ export const DEFAULT_CELL_SIZE: CellSize = "medium";
 
 // Default display units for a fresh territory: miles for US English, else km.
 export function defaultUnits(): Units {
-  return typeof navigator !== "undefined" && navigator.language === "en-US"
-    ? "mi"
-    : "km";
+  return typeof navigator !== "undefined" && navigator.language === "en-US" ? "mi" : "km";
 }
 
 // Style of the honeycomb cell borders.
@@ -81,10 +79,19 @@ export const HEX_BORDER_STYLE = {
   opacity: 0.6,
 };
 
+// Style of the frame that traces the outer contour of the whole grid — a
+// slightly darker, heavier line than the per-cell borders so the territory
+// reads as a single framed shape.
+export const HEX_FRAME_STYLE = {
+  color: "#1e293b",
+  width: 2,
+  opacity: 0.85,
+};
+
 // --- iNaturalist ----------------------------------------------------------
 // The iNat login (username) whose observations light up cells is part of each
 // user's territory (set in the UI), not a config constant — no default user.
 
 // Max pages of observations to fetch (200 per page). Caps the prototype's
 // network usage for very prolific users.
-export const INAT_MAX_PAGES = 5;
+export const INAT_MAX_PAGES = 10;

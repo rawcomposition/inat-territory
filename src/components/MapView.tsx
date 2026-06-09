@@ -2,12 +2,13 @@ import { useEffect, useRef } from "react"
 import mapboxgl from "mapbox-gl"
 import "mapbox-gl/dist/mapbox-gl.css"
 import * as turf from "@turf/turf"
-import type { FeatureCollection, Point, Polygon } from "geojson"
+import type { FeatureCollection, MultiLineString, Point, Polygon } from "geojson"
 
 import {
   AREA_HEX_ROTATION_DEG,
   AREA_SHAPE,
   HEX_BORDER_STYLE,
+  HEX_FRAME_STYLE,
   MAP_STYLE,
   MAPBOX_TOKEN,
   RADIUS_STYLE,
@@ -16,6 +17,7 @@ import {
 import { buildBoundary, type HexCellProps } from "@/lib/hexgrid"
 
 const GRID_SOURCE = "hex-grid"
+const FRAME_SOURCE = "hex-frame"
 const POINTS_SOURCE = "inat-points"
 const BOUNDARY_SOURCE = "area-boundary"
 
@@ -28,6 +30,8 @@ const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] }
 
 interface MapViewProps {
   grid: FeatureCollection<Polygon, HexCellProps>
+  /** Outer contour of the whole grid, drawn as a frame. */
+  outline: FeatureCollection<MultiLineString>
   points: FeatureCollection<Point>
   /** When false, cells without any finds are hidden. */
   showIncomplete: boolean
@@ -41,7 +45,7 @@ interface MapViewProps {
 // are toggled off; `null` clears the filter (show everything).
 const HIGHLIGHTED_ONLY: mapboxgl.FilterSpecification = ["get", "highlighted"]
 
-export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapViewProps) {
+export function MapView({ grid, outline, points, showIncomplete, center, radiusKm }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const loadedRef = useRef(false)
@@ -49,11 +53,13 @@ export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapV
   // Keep the latest data in refs so the (mount-only) load handler can seed the
   // sources with whatever is current when the style finishes loading.
   const gridRef = useRef(grid)
+  const outlineRef = useRef(outline)
   const pointsRef = useRef(points)
   const showIncompleteRef = useRef(showIncomplete)
   const centerRef = useRef(center)
   const radiusKmRef = useRef(radiusKm)
   gridRef.current = grid
+  outlineRef.current = outline
   pointsRef.current = points
   showIncompleteRef.current = showIncomplete
   centerRef.current = center
@@ -102,6 +108,21 @@ export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapV
         map.setFilter("hex-fill", HIGHLIGHTED_ONLY)
         map.setFilter("hex-outline", HIGHLIGHTED_ONLY)
       }
+
+      // Frame tracing the outer contour of the whole grid. Sits above the cell
+      // outlines and is never filtered — it always frames the full territory.
+      map.addSource(FRAME_SOURCE, { type: "geojson", data: outlineRef.current })
+      map.addLayer({
+        id: "hex-frame",
+        type: "line",
+        source: FRAME_SOURCE,
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": HEX_FRAME_STYLE.color,
+          "line-width": HEX_FRAME_STYLE.width,
+          "line-opacity": HEX_FRAME_STYLE.opacity,
+        },
+      })
 
       // Observation points.
       map.addSource(POINTS_SOURCE, { type: "geojson", data: pointsRef.current })
@@ -193,6 +214,14 @@ export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapV
     const src = map.getSource(GRID_SOURCE) as mapboxgl.GeoJSONSource | undefined
     src?.setData(grid)
   }, [grid])
+
+  // Push outline (frame) updates to the live source on a territory change.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loadedRef.current) return
+    const src = map.getSource(FRAME_SOURCE) as mapboxgl.GeoJSONSource | undefined
+    src?.setData(outline)
+  }, [outline])
 
   useEffect(() => {
     const map = mapRef.current

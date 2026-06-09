@@ -22,6 +22,8 @@
     --color-chart-2: var(--chart-2);
     --color-chart-1: var(--chart-1);
     --color-ring: var(--ring);
+    --color-inat: var(--inat);
+    --color-inat-strong: var(--inat-strong);
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
@@ -73,6 +75,10 @@
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
+    /* iNaturalist brand green — the app's accent for progress, links, primary
+     * actions, and the honeycomb metaphor. */
+    --inat: #1f9d57;
+    --inat-strong: #157f45;
     --sidebar: oklch(0.985 0 0);
     --sidebar-foreground: oklch(0.145 0 0);
     --sidebar-primary: oklch(0.205 0 0);
@@ -102,6 +108,9 @@
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
+    /* Brighter on dark so the accent keeps its punch against the dark card. */
+    --inat: #2bb368;
+    --inat-strong: #1f9d57;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);

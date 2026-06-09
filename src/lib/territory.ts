@@ -9,6 +9,51 @@ import { toKm } from "./units"
 export type Units = "mi" | "km"
 export type CellSize = "small" | "medium" | "large"
 
+/** Which observation years to include. Stored as a choice (not a concrete year)
+ * so "current"/"last" stay correct as time passes; resolved via {@link resolveYear}. */
+export type YearFilter = "all" | "current" | "last"
+
+/** iNaturalist iconic taxa we expose as filterable categories. */
+export type Category =
+  | "Aves"
+  | "Amphibia"
+  | "Reptilia"
+  | "Mammalia"
+  | "Actinopterygii"
+  | "Mollusca"
+  | "Arachnida"
+  | "Insecta"
+  | "Plantae"
+  | "Fungi"
+  | "Protozoa"
+
+/**
+ * The categories shown in the editor, mirroring iNaturalist's iconic-taxa
+ * filter (order and labels included, minus its "Unknown" option). The `value`
+ * is an iNaturalist `iconic_taxa` value passed straight to the API.
+ */
+export const CATEGORIES: { value: Category; label: string }[] = [
+  { value: "Aves", label: "Birds" },
+  { value: "Amphibia", label: "Amphibians" },
+  { value: "Reptilia", label: "Reptiles" },
+  { value: "Mammalia", label: "Mammals" },
+  { value: "Actinopterygii", label: "Ray-Finned Fishes" },
+  { value: "Mollusca", label: "Mollusks" },
+  { value: "Arachnida", label: "Arachnids" },
+  { value: "Insecta", label: "Insects" },
+  { value: "Plantae", label: "Plants" },
+  { value: "Fungi", label: "Fungi Including Lichens" },
+  { value: "Protozoa", label: "Protozoans" },
+]
+
+const CATEGORY_VALUES = CATEGORIES.map((c) => c.value)
+const CATEGORY_LABELS = new Map(CATEGORIES.map((c) => [c.value, c.label]))
+
+/** Common-name label for a category value (falls back to the raw value). */
+export function categoryLabel(value: Category): string {
+  return CATEGORY_LABELS.get(value) ?? value
+}
+
 /**
  * A user's "territory" — everything editable in the UI. Stored in display units
  * (km derivations happen at the geometry/API edge). Persisted to the territory
@@ -23,6 +68,10 @@ export interface Territory {
   /** Radius expressed in `units`. */
   radius: number
   cellSize: CellSize
+  /** Which years of observations to include. */
+  year: YearFilter
+  /** iconic-taxa filter; empty means all categories. */
+  categories: Category[]
 }
 
 const CELL_SIZES: CellSize[] = ["small", "medium", "large"]
@@ -40,6 +89,8 @@ export interface TerritoryDraft {
   units: Units
   radius: number
   cellSize: CellSize
+  year: YearFilter
+  categories: Category[]
 }
 
 /**
@@ -55,6 +106,8 @@ export function defaultDraft(): TerritoryDraft {
     units,
     radius: DEFAULT_RADIUS[units],
     cellSize: DEFAULT_CELL_SIZE,
+    year: "all",
+    categories: [],
   }
 }
 
@@ -75,12 +128,28 @@ export function cellSideKm(t: Territory): number {
   return CELL_SIZE_KM[t.cellSize]
 }
 
+/**
+ * Resolve the year filter to a concrete year, or null for "all years".
+ * `currentYear` is passed in (rather than read here) to keep this pure.
+ */
+export function resolveYear(t: Territory, currentYear: number): number | null {
+  if (t.year === "all") return null
+  return t.year === "current" ? currentYear : currentYear - 1
+}
+
 // --- Equality ------------------------------------------------------------
 
 const EPSILON = 1e-6
 
 function numEq(a: number, b: number): boolean {
   return Math.abs(a - b) < EPSILON
+}
+
+/** Order-insensitive equality for the category set. */
+function categoriesEqual(a: Category[], b: Category[]): boolean {
+  if (a.length !== b.length) return false
+  const sortedB = [...b].sort()
+  return [...a].sort().every((v, i) => v === sortedB[i])
 }
 
 /**
@@ -94,7 +163,9 @@ export function territoryEquals(a: Territory, b: Territory): boolean {
     a.username === b.username &&
     a.units === b.units &&
     numEq(a.radius, b.radius) &&
-    a.cellSize === b.cellSize
+    a.cellSize === b.cellSize &&
+    a.year === b.year &&
+    categoriesEqual(a.categories, b.categories)
   )
 }
 
@@ -147,7 +218,18 @@ export function parseTerritoryFromUrl(search: string): Territory | null {
     ? (c as CellSize)
     : DEFAULT_CELL_SIZE
 
-  return { lat: ll.lat, lng: ll.lng, username, units, radius, cellSize }
+  const y = p.get("y")
+  const year: YearFilter = y === "current" || y === "last" ? y : "all"
+
+  const catRaw = p.get("cat")
+  const categories: Category[] = catRaw
+    ? catRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s): s is Category => CATEGORY_VALUES.includes(s as Category))
+    : []
+
+  return { lat: ll.lat, lng: ll.lng, username, units, radius, cellSize, year, categories }
 }
 
 /** Serialize a territory to a query string (leading "?"), with tidy precision. */
@@ -160,5 +242,8 @@ export function serializeTerritoryToUrl(t: Territory): string {
     r: String(round(t.radius, 2)),
     c: t.cellSize,
   })
+  // Only encode non-default filters to keep shared URLs tidy.
+  if (t.year !== "all") p.set("y", t.year)
+  if (t.categories.length) p.set("cat", t.categories.join(","))
   return `?${p.toString()}`
 }
