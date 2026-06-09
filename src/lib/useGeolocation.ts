@@ -27,22 +27,41 @@ export function useGeolocation() {
       setLoading(true)
       setError(null)
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLoading(false)
-          resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        },
-        (err) => {
-          setLoading(false)
-          const msg =
-            err.code === err.PERMISSION_DENIED
-              ? "Location permission denied."
-              : "Couldn't get your location."
-          setError(msg)
-          reject(new Error(msg))
-        },
-        { enableHighAccuracy: true, timeout: 10_000 },
-      )
+      const attempt = (opts: PositionOptions, retriesLeft: number) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setLoading(false)
+            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+          },
+          (err) => {
+            // POSITION_UNAVAILABLE (macOS kCLErrorLocationUnknown) and TIMEOUT
+            // are typically transient — the OS just couldn't get a fix yet.
+            // Retry once with low accuracy, which leans on Wi‑Fi positioning
+            // and is more reliable on desktops than high-accuracy/GPS.
+            const transient =
+              err.code === err.POSITION_UNAVAILABLE || err.code === err.TIMEOUT
+            if (transient && retriesLeft > 0) {
+              attempt({ enableHighAccuracy: false, timeout: 15_000 }, retriesLeft - 1)
+              return
+            }
+
+            setLoading(false)
+            const msg =
+              err.code === err.PERMISSION_DENIED
+                ? "Location permission denied."
+                : err.code === err.POSITION_UNAVAILABLE
+                  ? "Your location is unavailable right now — check that Wi‑Fi and Location Services are on, then try again."
+                  : err.code === err.TIMEOUT
+                    ? "Timed out getting your location. Try again."
+                    : "Couldn't get your location."
+            setError(msg)
+            reject(new Error(msg))
+          },
+          opts,
+        )
+      }
+
+      attempt({ enableHighAccuracy: true, timeout: 10_000 }, 1)
     })
   }, [])
 

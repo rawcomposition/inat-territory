@@ -157,7 +157,6 @@ export function TerritoryEditor({
             value={latLngText}
             onChange={(e) => setLatLngText(e.target.value)}
             onBlur={handleLatLngBlur}
-            placeholder="33.584, -117.185"
             className="font-mono"
           />
           <Button
