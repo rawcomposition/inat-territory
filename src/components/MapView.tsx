@@ -71,7 +71,8 @@ export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapV
       zoom: centerRef.current ? 11 : WORLD_ZOOM,
     })
     mapRef.current = map
-    map.addControl(new mapboxgl.NavigationControl(), "top-right")
+    // Hide the compass (the double-arrow below the zoom buttons) everywhere.
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right")
 
     map.on("load", () => {
       // Honeycomb grid — drawn right away, before observations load.
@@ -114,6 +115,25 @@ export function MapView({ grid, points, showIncomplete, center, radiusKm }: MapV
           "circle-stroke-color": "#ffffff",
           "circle-stroke-width": 1,
         },
+      })
+
+      // Open the observation on iNaturalist when its point is clicked, and show
+      // a pointer cursor while hovering one.
+      map.on("click", "inat-points", (e) => {
+        const id = e.features?.[0]?.properties?.id
+        if (id != null) {
+          window.open(
+            `https://www.inaturalist.org/observations/${id}`,
+            "_blank",
+            "noopener,noreferrer",
+          )
+        }
+      })
+      map.on("mouseenter", "inat-points", () => {
+        map.getCanvas().style.cursor = "pointer"
+      })
+      map.on("mouseleave", "inat-points", () => {
+        map.getCanvas().style.cursor = ""
       })
 
       // Boundary of the area of interest (circle or hexagon). Always added as a

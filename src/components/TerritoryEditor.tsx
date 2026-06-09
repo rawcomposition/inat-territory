@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { LocateFixed } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -11,6 +12,10 @@ import {
   type Units,
 } from "@/lib/territory"
 import { convertRadius } from "@/lib/units"
+import { useGeolocation } from "@/lib/useGeolocation"
+
+/** Round a coordinate to the 6 decimal places we store / display. */
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6
 
 interface TerritoryEditorProps {
   /** The territory (or blank draft) the form starts from. */
@@ -45,14 +50,25 @@ export function TerritoryEditor({
   const [radius, setRadius] = useState(String(initial.radius))
   const [cellSize, setCellSize] = useState<CellSize>(initial.cellSize)
   const [error, setError] = useState<string | null>(null)
+  const geo = useGeolocation()
 
   // On blur, normalize a valid "lat, lng" to 6 decimal places; leave invalid
   // input untouched so the user can fix it (Save surfaces the error).
   function handleLatLngBlur() {
     const ll = parseLatLng(latLngText)
     if (!ll) return
-    const round6 = (n: number) => Math.round(n * 1e6) / 1e6
     setLatLngText(`${round6(ll.lat)}, ${round6(ll.lng)}`)
+  }
+
+  // Fill the field from the browser's geolocation, if the user allows it.
+  async function handleUseMyLocation() {
+    try {
+      const { lat, lng } = await geo.request()
+      setLatLngText(`${round6(lat)}, ${round6(lng)}`)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't get your location.")
+    }
   }
 
   function handleUnitsChange(next: Units) {
@@ -92,13 +108,27 @@ export function TerritoryEditor({
 
       <div className="space-y-1.5">
         <Label htmlFor="te-latlng">Center (lat, lng)</Label>
-        <Input
-          id="te-latlng"
-          value={latLngText}
-          onChange={(e) => setLatLngText(e.target.value)}
-          onBlur={handleLatLngBlur}
-          placeholder="33.584, -117.185"
-        />
+        <div className="flex gap-2">
+          <Input
+            id="te-latlng"
+            value={latLngText}
+            onChange={(e) => setLatLngText(e.target.value)}
+            onBlur={handleLatLngBlur}
+            placeholder="33.584, -117.185"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="shrink-0"
+            onClick={handleUseMyLocation}
+            disabled={geo.loading}
+            aria-label="Use my current location"
+            title="Use my current location"
+          >
+            <LocateFixed className={geo.loading ? "animate-pulse" : undefined} />
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-1.5">

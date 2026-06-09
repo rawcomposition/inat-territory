@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
+import { ChevronDown, ChevronUp, X } from "lucide-react"
 import type { FeatureCollection, Point } from "geojson"
 import { MapView } from "@/components/MapView"
 import { TerritoryEditor } from "@/components/TerritoryEditor"
@@ -46,6 +47,8 @@ function App() {
   const [loadedFromUrl, setLoadedFromUrl] = useState(initial.fromUrl)
   // Open the editor automatically when there's no territory to show.
   const [editing, setEditing] = useState(initial.active == null)
+  // Collapse the panel down to just its header (handy on small screens).
+  const [collapsed, setCollapsed] = useState(false)
 
   const setSaved = useTerritoryStore((s) => s.setSaved)
   const savedTerritory = useTerritoryStore((s) => s.saved)
@@ -74,6 +77,10 @@ function App() {
   // Whether to draw cells without any finds — persisted in the settings store.
   const showIncomplete = useSettings((s) => s.showIncomplete)
   const setShowIncomplete = useSettings((s) => s.setShowIncomplete)
+
+  // One-time notice that obscured-location observations are excluded.
+  const obscuredNoticeDismissed = useSettings((s) => s.obscuredNoticeDismissed)
+  const dismissObscuredNotice = useSettings((s) => s.dismissObscuredNotice)
 
   // The query is disabled when there's no username (i.e. no active territory),
   // so the placeholder center/radius are never actually used.
@@ -129,13 +136,29 @@ function App() {
     <div className="relative h-screen w-screen overflow-hidden">
       <MapView grid={grid} points={points} showIncomplete={showIncomplete} center={center} radiusKm={rKm} />
 
-      <Card className="absolute left-4 top-4 z-10 w-80 bg-background/95 backdrop-blur">
+      <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-80">
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex items-center justify-between gap-2">
             <span>iNat Territory</span>
-            <StatusBadge state={obsState(obs)} />
+            <div className="flex items-center gap-2">
+              <StatusBadge state={obsState(obs)} />
+              <button
+                type="button"
+                onClick={() => setCollapsed((c) => !c)}
+                aria-label={collapsed ? "Expand panel" : "Collapse panel"}
+                aria-expanded={!collapsed}
+                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {collapsed ? (
+                  <ChevronDown className="size-4" />
+                ) : (
+                  <ChevronUp className="size-4" />
+                )}
+              </button>
+            </div>
           </CardTitle>
         </CardHeader>
+        {!collapsed && (
         <CardContent className="space-y-3 text-sm">
           {editing ? (
             <TerritoryEditor
@@ -146,7 +169,19 @@ function App() {
             />
           ) : active ? (
             <>
-              <Row label="iNat user" value={`@${active.username}`} />
+              <Row
+                label="iNat user"
+                value={
+                  <a
+                    href={`https://www.inaturalist.org/observations?place_id=any&user_id=${encodeURIComponent(active.username)}&verifiable=any`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+                  >
+                    @{active.username}
+                  </a>
+                }
+              />
               <Row label="Center (lat, lng)" value={`${active.lat}, ${active.lng}`} />
               <Row label="Radius" value={`${active.radius} ${active.units}`} />
               <Row
@@ -190,6 +225,20 @@ function App() {
                 </>
               )}
 
+              {!obscuredNoticeDismissed && (
+                <div className="relative rounded-md border border-border bg-muted/50 px-3 py-2 pr-7 text-xs text-muted-foreground">
+                  Observations with obscured locations aren’t included.
+                  <button
+                    type="button"
+                    onClick={dismissObscuredNotice}
+                    aria-label="Dismiss notice"
+                    className="absolute right-1.5 top-1.5 rounded p-0.5 hover:bg-muted hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              )}
+
               <hr className="border-border" />
 
               <div className="flex items-center justify-between gap-4">
@@ -206,6 +255,7 @@ function App() {
             </>
           ) : null}
         </CardContent>
+        )}
       </Card>
     </div>
   )
@@ -221,7 +271,7 @@ function obsState(obs: ReturnType<typeof useObservations>): ObsState {
   return "idle"
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="text-muted-foreground">{label}</span>

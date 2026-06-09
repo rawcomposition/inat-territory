@@ -9,6 +9,9 @@ interface SettingsState {
   /** Whether to draw cells without any finds. */
   showIncomplete: boolean
   setShowIncomplete: (value: boolean) => void
+  /** Whether the user has dismissed the obscured-locations notice. */
+  obscuredNoticeDismissed: boolean
+  dismissObscuredNotice: () => void
 }
 
 export const useSettings = create<SettingsState>()(
@@ -16,6 +19,8 @@ export const useSettings = create<SettingsState>()(
     (set) => ({
       showIncomplete: true,
       setShowIncomplete: (value) => set({ showIncomplete: value }),
+      obscuredNoticeDismissed: false,
+      dismissObscuredNotice: () => set({ obscuredNoticeDismissed: true }),
     }),
     { name: "inat-territory-settings" },
   ),

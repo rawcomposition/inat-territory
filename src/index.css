@@ -128,3 +128,10 @@
     @apply font-sans;
     }
 }
+
+/* Hide the Mapbox zoom controls on small screens to keep the map uncluttered. */
+@media (max-width: 639px) {
+  .mapboxgl-ctrl-top-right .mapboxgl-ctrl-group {
+    display: none;
+  }
+}
