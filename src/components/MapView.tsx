@@ -77,6 +77,12 @@ export function MapView({ grid, outline, points, showIncomplete, center, radiusK
       zoom: centerRef.current ? 11 : WORLD_ZOOM,
     })
     mapRef.current = map
+    // Keep the map north-up: disable drag-to-rotate and the rotate/pitch
+    // gesture on the two-finger touch handler (pinch-zoom stays enabled).
+    map.dragRotate.disable()
+    map.touchZoomRotate.disableRotation()
+    map.touchPitch.disable()
+    map.keyboard.disableRotation()
     // Hide the compass (the double-arrow below the zoom buttons) everywhere.
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right")
     // "Show my location" button — tracks the user's device location and keeps
