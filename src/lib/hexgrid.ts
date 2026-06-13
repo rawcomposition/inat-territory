@@ -1,4 +1,5 @@
 import * as turf from "@turf/turf"
+import * as h3 from "h3-js"
 import type {
   Feature,
   FeatureCollection,
@@ -8,7 +9,9 @@ import type {
 import type { InatObservation } from "./inaturalist"
 
 export interface HexCellProps {
-  id: number
+  /** Global H3 cell index — deterministic and identical across users, so two
+   * overlapping territories share the exact same cell ids. */
+  id: string
   /** how many of the user's observations fall inside this cell */
   count: number
   highlighted: boolean
@@ -51,66 +54,61 @@ export function buildBoundary(
   return turf.circle(center, radiusKm, { units: "kilometers", steps: 256 })
 }
 
+/** Polygon for an H3 cell, as a closed GeoJSON ring in [lng, lat] order. */
+function h3CellPolygon(index: string): Feature<Polygon> {
+  // `true` → GeoJSON form: [lng, lat] order, ring closed (last point == first).
+  return turf.polygon([h3.cellToBoundary(index, true)])
+}
+
 /**
- * Build a honeycomb grid covering the area defined by `shape`.
+ * Select the H3 cells for a territory: those whose center falls inside a
+ * hexagon of circumradius `radiusKm`, centered on the center cell and rotated
+ * to match the cells' own orientation.
  *
- * Cells are kept whole (never clipped). A boundary cell is kept when the
- * fraction of its area inside the boundary is at least `fillThreshold`:
- *   - lower threshold  → fuller, chunkier disk (keeps cells barely touching)
- *   - ~0.5             → balanced, hugs the circle smoothly
- *   - higher threshold → tighter disk (only mostly-inside cells)
- * Selecting by area fraction (rather than centroid distance) breaks up the
- * flat runs a centroid test produces, so the edge reads more naturally round.
+ * Aligning the bounding hexagon to the local cell tilt (rather than to north)
+ * makes the macro shape *mirror* the unit cells — flat where the cells are flat
+ * — so the territory reads as a big hexagon-of-hexagons in the same orientation
+ * as its cells, instead of the 30°-rotated, pointy-topped diamond a plain
+ * grid-disk produces. The hexagon is centered on the center cell so the result
+ * stays symmetric about the middle. Because the cells come from H3's fixed
+ * global tiling the result is deterministic: overlapping territories share
+ * identical cell ids.
  *
- * @param center          [lng, lat] center of the area
- * @param radiusKm        circumradius of the area in kilometers
- * @param cellSideKm      length of one hexagon cell edge in kilometers
- * @param shape           overall area shape ("circle" or "hexagon")
- * @param hexRotationDeg  rotation of the hexagon boundary (degrees)
- * @param fillThreshold   fraction of a cell that must lie inside to keep it
+ * @param center      [lng, lat] center of the territory
+ * @param radiusKm    circumradius of the bounding hexagon in kilometers
+ * @param resolution  H3 resolution (higher = smaller cells)
  */
 export function buildHexGrid(
   center: [number, number],
   radiusKm: number,
-  cellSideKm: number,
-  shape: AreaShape = "circle",
-  hexRotationDeg = 0,
-  fillThreshold = 0.5,
+  resolution: number,
 ): HexCell[] {
-  const boundary = buildBoundary(center, radiusKm, shape, hexRotationDeg)
-  const bbox = turf.bbox(boundary)
+  const [lng, lat] = center
+  const centerCell = h3.latLngToCell(lat, lng, resolution)
 
-  const grid = turf.hexGrid(bbox, cellSideKm, { units: "kilometers" })
+  // The cells' orientation: the bearing from the center cell's middle to its
+  // first vertex. Rotating the bounding hexagon to this angle lines its edges
+  // up with the cell edges, so the macro shape mirrors the cells.
+  const [cLat, cLng] = h3.cellToLatLng(centerCell)
+  const cellCenter: [number, number] = [cLng, cLat]
+  const rotation = turf.bearing(cellCenter, h3.cellToBoundary(centerCell, true)[0])
 
-  const cells: HexCell[] = []
-  let id = 0
-  for (const hex of grid.features) {
-    const ring = hex.geometry.coordinates[0]
-    const vertices = ring.slice(0, -1) // drop the closing duplicate
-    const inside = vertices.map((v) => turf.booleanPointInPolygon(v, boundary))
-    const allIn = inside.every(Boolean)
-    const anyIn = inside.some(Boolean)
+  // Center the hexagon on the cell (not the raw point) to keep the disk
+  // symmetric about the middle cell.
+  const boundary = buildBoundary(cellCenter, radiusKm, "hexagon", rotation)
 
-    let keep = false
-    if (allIn) {
-      keep = true
-    } else if (anyIn) {
-      // Boundary cell — keep the whole cell if enough of it is inside.
-      const overlap = turf.intersect(turf.featureCollection([hex, boundary]))
-      if (overlap) {
-        keep = turf.area(overlap) / turf.area(hex) >= fillThreshold
-      }
-    }
+  // polygonToCells keeps cells whose center is inside; union the center cell so
+  // a radius smaller than one cell still yields the single covering cell.
+  const indices = new Set<string>([
+    centerCell,
+    ...h3.polygonToCells(boundary.geometry.coordinates, resolution, true),
+  ])
 
-    if (keep) {
-      cells.push({
-        type: "Feature",
-        geometry: hex.geometry as Polygon,
-        properties: { id: id++, count: 0, highlighted: false },
-      })
-    }
-  }
-  return cells
+  return [...indices].map((index) => ({
+    type: "Feature",
+    geometry: h3CellPolygon(index).geometry,
+    properties: { id: index, count: 0, highlighted: false },
+  }))
 }
 
 /**
@@ -204,16 +202,20 @@ export function markObservedCells(
     cell.properties.highlighted = false
   }
 
+  // Map cells by their H3 index for O(1) lookup. The resolution is read back
+  // from a kept cell, so this needs no extra parameter.
+  const byId = new Map(cells.map((c) => [c.properties.id, c]))
+  const resolution = cells.length ? h3.getResolution(cells[0].properties.id) : null
+
   const matched: InatObservation[] = []
-  for (const obs of observations) {
-    const pt = turf.point(obs.coords)
-    // Linear scan is fine for prototype-scale grids/observation counts.
-    for (const cell of cells) {
-      if (turf.booleanPointInPolygon(pt, cell)) {
+  if (resolution != null) {
+    for (const obs of observations) {
+      const [lng, lat] = obs.coords
+      const cell = byId.get(h3.latLngToCell(lat, lng, resolution))
+      if (cell) {
         cell.properties.count += 1
         cell.properties.highlighted = true
         matched.push(obs)
-        break
       }
     }
   }

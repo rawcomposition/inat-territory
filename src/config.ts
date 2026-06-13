@@ -16,21 +16,19 @@ export const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
 // The center is part of each user's territory (set in the UI / shared via URL),
 // not a config constant — there's no hardcoded fallback location.
 
-// Shape of the overall area the grid covers:
-//  - "hexagon": cells within a large hexagon — shares the honeycomb's 6-fold
-//               symmetry, so the grid reads as an intentional hex tile.
-//  - "circle":  cells within RADIUS_KM of center (continuous, bumpy edge).
+// Shape of the area *boundary* outline (drawn only when SHOW_RADIUS is true) and
+// the region the map frames on. Cells themselves are no longer clipped to this
+// shape — the territory is a grid-disk (see "Honeycomb grid" below), so this
+// only affects the optional outline and the fitBounds framing.
+//  - "hexagon": a large hexagon around the center.
+//  - "circle":  a circle of RADIUS_KM around the center.
 export const AREA_SHAPE: import("./lib/hexgrid").AreaShape = "hexagon";
 
-// Rotation (degrees) of the bounding hexagon, when AREA_SHAPE is "hexagon".
+// Rotation (degrees) of the bounding hexagon outline, when AREA_SHAPE is
+// "hexagon". Affects only the SHOW_RADIUS outline, not the cells.
 //   0  = vertices N/S  → pointy top & bottom, flat left/right sides
 //   30 = vertices E/W  → flat top & bottom, points to the east and west
 export const AREA_HEX_ROTATION_DEG = 30;
-
-// How much of a perimeter cell must fall inside the boundary to keep it (0–1).
-// Cells are always kept whole; this only decides which edge cells make the cut.
-// Lower = fuller, chunkier disk; ~0.5 = balanced/roundest; higher = tighter.
-export const CELL_FILL_THRESHOLD = 0.5;
 
 // Default radius suggested for a fresh territory, per display unit. Kept as
 // round numbers per unit (rather than converting one into the other) so the
@@ -52,16 +50,21 @@ export const RADIUS_STYLE = {
 };
 
 // --- Honeycomb grid -------------------------------------------------------
-// Size of each hexagon, expressed as the length of one hexagon edge in km.
-// Smaller = more, finer cells. Larger = fewer, coarser cells.
-export const HEX_CELL_SIZE_KM = 0.5;
-
-// Cell-size categories offered in the editor → hexagon edge length in km.
-// Tweak these to change what "small / medium / large" mean.
-export const CELL_SIZE_KM: Record<CellSize, number> = {
-  small: 0.5,
-  medium: 1.0,
-  large: 2.0,
+// Cells come from H3 (https://h3geo.org), a fixed global hexagonal tiling of
+// the Earth. This makes the grid deterministic: a given lat/lng always maps to
+// the same cell for every user, so two overlapping territories light up the
+// exact same cells. A territory is the set of cells whose centers fall inside a
+// hexagon (centered on the middle cell, rotated to match the cells' own tilt),
+// so the macro shape mirrors the unit cells — a flat-topped hexagon-of-hexagons.
+//
+// Cell-size categories offered in the editor → H3 resolution. H3 resolutions
+// are discrete (~2.6x apart), so these are the nearest stops to the old
+// 0.5 / 1.0 / 2.0 km edges — see the avg edge length in each comment.
+//   res 8 ≈ 0.53 km edge · res 7 ≈ 1.41 km edge · res 6 ≈ 3.72 km edge
+export const CELL_SIZE_RES: Record<CellSize, number> = {
+  small: 8,
+  medium: 7,
+  large: 6,
 };
 
 // Cell size used for a fresh territory.

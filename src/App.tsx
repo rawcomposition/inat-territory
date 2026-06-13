@@ -9,20 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
-import {
-  AREA_HEX_ROTATION_DEG,
-  AREA_SHAPE,
-  CELL_FILL_THRESHOLD,
-  INAT_MAX_PAGES,
-  MAPBOX_TOKEN,
-} from "@/config"
+import { INAT_MAX_PAGES, MAPBOX_TOKEN } from "@/config"
 import { buildCellsOutline, buildHexGrid, markObservedCells } from "@/lib/hexgrid"
 import { useObservations } from "@/lib/useObservations"
 import { useSettings } from "@/lib/settingsStore"
 import { useTerritoryStore } from "@/lib/territoryStore"
 import {
   categoryLabel,
-  cellSideKm,
+  cellResolution,
   centerLngLat,
   defaultDraft,
   parseTerritoryFromUrl,
@@ -60,7 +54,7 @@ function App() {
   // no active territory.
   const center = useMemo(() => (active ? centerLngLat(active) : null), [active])
   const rKm = useMemo(() => (active ? radiusKm(active) : null), [active])
-  const cellKm = useMemo(() => (active ? cellSideKm(active) : null), [active])
+  const cellRes = useMemo(() => (active ? cellResolution(active) : null), [active])
 
   // Observation filters fed to the iNat query. `year` resolves "current"/"last"
   // to a concrete year; empty `categories` means all categories.
@@ -72,17 +66,10 @@ function App() {
 
   const cells = useMemo(
     () =>
-      center && rKm != null && cellKm != null
-        ? buildHexGrid(
-            center,
-            rKm,
-            cellKm,
-            AREA_SHAPE,
-            AREA_HEX_ROTATION_DEG,
-            CELL_FILL_THRESHOLD,
-          )
+      center && rKm != null && cellRes != null
+        ? buildHexGrid(center, rKm, cellRes)
         : [],
-    [center, rKm, cellKm],
+    [center, rKm, cellRes],
   )
 
   // Outer contour of the whole grid, drawn as a frame. Depends only on the

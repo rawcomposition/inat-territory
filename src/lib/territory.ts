@@ -1,5 +1,5 @@
 import {
-  CELL_SIZE_KM,
+  CELL_SIZE_RES,
   DEFAULT_CELL_SIZE,
   DEFAULT_RADIUS,
   defaultUnits,
@@ -123,9 +123,9 @@ export function radiusKm(t: Territory): number {
   return toKm(t.radius, t.units)
 }
 
-/** Cell edge length in kilometers for the chosen category. */
-export function cellSideKm(t: Territory): number {
-  return CELL_SIZE_KM[t.cellSize]
+/** H3 resolution for the chosen cell-size category. */
+export function cellResolution(t: Territory): number {
+  return CELL_SIZE_RES[t.cellSize]
 }
 
 /**

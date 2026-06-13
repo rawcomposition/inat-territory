@@ -15,6 +15,7 @@
     "@turf/turf": "^7.3.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "h3-js": "^4.4.0",
     "lucide-react": "^1.17.0",
     "mapbox-gl": "^3.24.0",
     "radix-ui": "^1.5.0",

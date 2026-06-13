@@ -205,9 +205,12 @@ export function MapView({ grid, outline, points, showIncomplete, center, radiusK
         })
       }
 
-      // Frame the area, if there is one.
+      // Frame the area, if there is one. Fit to the actual cells (the grid-disk
+      // can reach a little past the nominal radius), falling back to the
+      // boundary before any cells exist.
       if (initialCenter && initialRadius != null) {
-        map.fitBounds(turf.bbox(boundary) as [number, number, number, number], {
+        const frame = outlineRef.current.features.length ? outlineRef.current : boundary
+        map.fitBounds(turf.bbox(frame) as [number, number, number, number], {
           padding: 40,
           duration: 0,
         })
@@ -268,11 +271,12 @@ export function MapView({ grid, outline, points, showIncomplete, center, radiusK
     }
     const boundary = buildBoundary(center, radiusKm, AREA_SHAPE, AREA_HEX_ROTATION_DEG)
     src?.setData(boundary)
-    map.fitBounds(turf.bbox(boundary) as [number, number, number, number], {
+    const frame = outline.features.length ? outline : boundary
+    map.fitBounds(turf.bbox(frame) as [number, number, number, number], {
       padding: 40,
       duration: 600,
     })
-  }, [center, radiusKm])
+  }, [center, radiusKm, outline])
 
   if (!MAPBOX_TOKEN) {
     return (
