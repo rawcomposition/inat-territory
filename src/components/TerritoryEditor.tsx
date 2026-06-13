@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronDown, LocateFixed } from "lucide-react"
+import { ChevronDown, LocateFixed, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -15,8 +15,8 @@ import {
   parseLatLng,
   type Category,
   type CellSize,
-  type Territory,
   type TerritoryDraft,
+  type TerritoryInput,
   type Units,
   type YearFilter,
 } from "@/lib/territory"
@@ -29,11 +29,12 @@ const round6 = (n: number) => Math.round(n * 1e6) / 1e6
 interface TerritoryEditorProps {
   /** The territory (or blank draft) the form starts from. */
   initial: TerritoryDraft
-  /** Whether saving will overwrite a different, already-saved territory. */
-  showOverwriteWarning: boolean
-  onSave: (territory: Territory) => void
-  /** Omitted when there's nothing to return to (first-run, no saved territory). */
-  onCancel?: () => void
+  /** "create" shows a "Create territory" button; "edit" adds a Delete action. */
+  mode: "create" | "edit"
+  onSave: (territory: TerritoryInput) => void
+  onCancel: () => void
+  /** Provided in edit mode to delete the territory being edited. */
+  onDelete?: () => void
 }
 
 const CELL_SIZES: CellSize[] = ["small", "medium", "large"]
@@ -45,10 +46,12 @@ const SELECTED =
 
 export function TerritoryEditor({
   initial,
-  showOverwriteWarning,
+  mode,
   onSave,
   onCancel,
+  onDelete,
 }: TerritoryEditorProps) {
+  const [name, setName] = useState(initial.name)
   const [latLngText, setLatLngText] = useState(
     initial.lat != null && initial.lng != null
       ? `${initial.lat}, ${initial.lng}`
@@ -103,6 +106,11 @@ export function TerritoryEditor({
   }
 
   function handleSave() {
+    const territoryName = name.trim()
+    if (!territoryName) {
+      setError("Give your territory a name.")
+      return
+    }
     const ll = parseLatLng(latLngText)
     if (!ll) {
       setError("Enter coordinates as “lat, lng”.")
@@ -113,15 +121,16 @@ export function TerritoryEditor({
       setError("Radius must be a positive number.")
       return
     }
-    const name = username.trim()
-    if (!name) {
+    const user = username.trim()
+    if (!user) {
       setError("Enter an iNaturalist username.")
       return
     }
     onSave({
+      name: territoryName,
       lat: ll.lat,
       lng: ll.lng,
-      username: name,
+      username: user,
       units,
       radius: r,
       cellSize,
@@ -132,12 +141,14 @@ export function TerritoryEditor({
 
   return (
     <div className="space-y-3 text-sm">
-      {showOverwriteWarning && (
-        <div className="rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          You’re viewing a shared territory. Saving will overwrite your own
-          saved territory.
-        </div>
-      )}
+      <div className="space-y-1.5">
+        <Label htmlFor="te-name">Territory name</Label>
+        <Input
+          id="te-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="te-username">iNat username</Label>
@@ -145,7 +156,6 @@ export function TerritoryEditor({
           id="te-username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="username"
         />
       </div>
 
@@ -175,8 +185,10 @@ export function TerritoryEditor({
       </div>
 
       <div className="flex gap-3">
-        <div className="w-24 shrink-0 space-y-1.5">
-          <Label htmlFor="te-radius">Radius</Label>
+        <div className="w-32 shrink-0 space-y-1.5">
+          <Label htmlFor="te-radius" className="whitespace-nowrap">
+            Radius (approx.)
+          </Label>
           <Input
             id="te-radius"
             type="number"
@@ -320,14 +332,25 @@ export function TerritoryEditor({
           className="flex-1 bg-inat text-white hover:bg-inat/90"
           onClick={handleSave}
         >
-          Save territory
+          {mode === "create" ? "Create territory" : "Save changes"}
         </Button>
-        {onCancel && (
-          <Button size="sm" variant="outline" className="flex-1" onClick={onCancel}>
-            Cancel
-          </Button>
-        )}
+        <Button size="sm" variant="outline" className="flex-1" onClick={onCancel}>
+          Cancel
+        </Button>
       </div>
+
+      {mode === "edit" && onDelete && (
+        <div className="flex justify-center pt-1">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-red-700/90 hover:bg-red-700/10 dark:text-red-400/90"
+          >
+            <Trash2 className="size-3.5" />
+            Delete territory
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,11 +1,19 @@
-import { useMemo, useState, type ReactNode } from "react"
-import { Check, ChevronDown, ChevronUp, Copy, Share2, X } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  Copy,
+  Plus,
+  X,
+} from "lucide-react"
 import type { FeatureCollection, Point } from "geojson"
 import { MapView } from "@/components/MapView"
-import { RingGauge } from "@/components/RingGauge"
 import { TerritoryEditor } from "@/components/TerritoryEditor"
+import { SharedTerritoryCard, TerritoryCard } from "@/components/TerritoryCard"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import {
@@ -21,58 +29,89 @@ import { useObservations } from "@/lib/useObservations"
 import { useSettings } from "@/lib/settingsStore"
 import { useTerritoryStore } from "@/lib/territoryStore"
 import {
-  categoryLabel,
   cellResolution,
   centerLngLat,
   defaultDraft,
+  draftFrom,
   parseTerritoryFromUrl,
   radiusKm,
   resolveYear,
   serializeTerritoryToUrl,
-  territoryEquals,
   type Territory,
+  type TerritoryDraft,
+  type TerritoryInput,
+  type TerritoryStats,
 } from "@/lib/territory"
 
+/** What the editor is doing when open. */
+interface EditorState {
+  mode: "create" | "edit"
+  /** The territory being edited (edit mode only). */
+  id: string | null
+  initial: TerritoryDraft
+  /** Opened via the shared card's "Save territory" — clears the share on save. */
+  fromShared: boolean
+}
+
 function App() {
-  // Decide the active territory ONCE: a URL-encoded territory wins (and never
-  // touches the persisted store); otherwise use the saved territory. With no
-  // URL and nothing saved, there's no territory yet (`null`) → the map shows the
-  // whole world and the editor opens for a first-time setup. Reading the store
-  // via getState() (not a selector) keeps this out of the render-subscription
-  // loop.
-  const initial = useMemo(() => {
-    const fromUrl = parseTerritoryFromUrl(window.location.search)
-    if (fromUrl) return { active: fromUrl, fromUrl: true }
-    return { active: useTerritoryStore.getState().saved, fromUrl: false }
-  }, [])
-
-  const [active, setActive] = useState<Territory | null>(initial.active)
-  const [loadedFromUrl, setLoadedFromUrl] = useState(initial.fromUrl)
-  // Open the editor automatically when there's no territory to show.
-  const [editing, setEditing] = useState(initial.active == null)
-  // Collapse the panel down to just its header (handy on small screens).
-  const [collapsed, setCollapsed] = useState(false)
-  // Whether the share panel (URL + copy button) is open, and a short-lived
-  // "copied" confirmation.
-  const [sharing, setSharing] = useState(false)
-  const [copied, setCopied] = useState(false)
-
-  const setSaved = useTerritoryStore((s) => s.setSaved)
-  const savedTerritory = useTerritoryStore((s) => s.saved)
-
-  // Derived values that feed the geometry and the iNat query. Null while there's
-  // no active territory.
-  const center = useMemo(() => (active ? centerLngLat(active) : null), [active])
-  const rKm = useMemo(() => (active ? radiusKm(active) : null), [active])
-  const cellRes = useMemo(() => (active ? cellResolution(active) : null), [active])
-
-  // Observation filters fed to the iNat query. `year` resolves "current"/"last"
-  // to a concrete year; empty `categories` means all categories.
-  const year = useMemo(
-    () => (active ? resolveYear(active, new Date().getFullYear()) : null),
-    [active],
+  // A territory encoded in the URL is a transient preview — never persisted
+  // unless the user explicitly saves it. Parsed once on mount.
+  const [shared, setShared] = useState<Territory | null>(() =>
+    parseTerritoryFromUrl(window.location.search),
   )
-  const categories = useMemo(() => active?.categories ?? [], [active])
+  // Whether the shared territory is the one currently drawn on the map. Starts
+  // true when arriving via a shared link; flips off once the user picks one of
+  // their own.
+  const [previewShared, setPreviewShared] = useState(shared != null)
+
+  const territories = useTerritoryStore((s) => s.territories)
+  const activeId = useTerritoryStore((s) => s.activeId)
+  const addTerritory = useTerritoryStore((s) => s.add)
+  const updateTerritory = useTerritoryStore((s) => s.update)
+  const removeTerritory = useTerritoryStore((s) => s.remove)
+  const setActive = useTerritoryStore((s) => s.setActive)
+  const setStats = useTerritoryStore((s) => s.setStats)
+
+  const [view, setView] = useState<"list" | "editor">("list")
+  const [editor, setEditor] = useState<EditorState | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+
+  // Share dialog (URL + copy) and a short-lived "copied" confirmation.
+  const [shareTarget, setShareTarget] = useState<Territory | null>(null)
+  const [copied, setCopied] = useState(false)
+  // Territory pending delete confirmation.
+  const [deleteTarget, setDeleteTarget] = useState<Territory | null>(null)
+
+  // The territory rendered on the map: the shared preview when active, else the
+  // user's active saved territory (null → the map shows the whole world).
+  const savedActive = useMemo(
+    () => territories.find((t) => t.id === activeId) ?? null,
+    [territories, activeId],
+  )
+  const mapTerritory: Territory | null =
+    previewShared && shared ? shared : savedActive
+  // The saved territory currently on the map, if any — the one whose stats we
+  // refresh from the live query. Null when previewing a shared territory.
+  const savedMapId = previewShared ? null : (savedActive?.id ?? null)
+
+  // Derived geometry / query inputs. Null while there's no territory on the map.
+  const center = useMemo(
+    () => (mapTerritory ? centerLngLat(mapTerritory) : null),
+    [mapTerritory],
+  )
+  const rKm = useMemo(
+    () => (mapTerritory ? radiusKm(mapTerritory) : null),
+    [mapTerritory],
+  )
+  const cellRes = useMemo(
+    () => (mapTerritory ? cellResolution(mapTerritory) : null),
+    [mapTerritory],
+  )
+  const year = useMemo(
+    () => (mapTerritory ? resolveYear(mapTerritory, new Date().getFullYear()) : null),
+    [mapTerritory],
+  )
+  const categories = useMemo(() => mapTerritory?.categories ?? [], [mapTerritory])
 
   const cells = useMemo(
     () =>
@@ -81,20 +120,12 @@ function App() {
         : [],
     [center, rKm, cellRes],
   )
-
-  // Outer contour of the whole grid, drawn as a frame. Depends only on the
-  // cell geometry, so it's recomputed on a territory change, not when
-  // observations arrive.
   const outline = useMemo(() => buildCellsOutline(cells), [cells])
 
-  // One-time notice that obscured-location observations are excluded.
   const obscuredNoticeDismissed = useSettings((s) => s.obscuredNoticeDismissed)
-  const dismissObscuredNotice = useSettings((s) => s.dismissObscuredNotice)
 
-  // The query is disabled when there's no username (i.e. no active territory),
-  // so the placeholder center/radius are never actually used.
   const obs = useObservations(
-    active?.username ?? "",
+    mapTerritory?.username ?? "",
     center ?? [0, 0],
     rKm ?? 0,
     INAT_MAX_PAGES,
@@ -103,9 +134,6 @@ function App() {
   )
   const observations = useMemo(() => obs.data ?? [], [obs.data])
 
-  // Re-mark cells whenever observations arrive/change. `matched` is the subset
-  // of observations that land inside a cell — observations outside the hexagon
-  // are dropped from both the map and the stats.
   const { grid, matched } = useMemo(
     () => markObservedCells(cells, observations),
     [cells, observations],
@@ -126,30 +154,89 @@ function App() {
   const highlightedCells = grid.features.filter((f) => f.properties.highlighted).length
   const coverage =
     cells.length > 0 ? Math.round((highlightedCells / cells.length) * 100) : 0
+  const settled = !obs.isPending && !obs.isError
 
-  // Warn before overwriting only when the open territory came from a shared URL
-  // AND the user already has a different saved territory.
-  const showOverwriteWarning =
-    loadedFromUrl &&
-    savedTerritory != null &&
-    active != null &&
-    !territoryEquals(savedTerritory, active)
+  // Live coverage for the territory currently on the map.
+  const liveStats = useMemo<TerritoryStats | undefined>(
+    () =>
+      settled
+        ? {
+            cellsClaimed: highlightedCells,
+            cellsTotal: cells.length,
+            observations: matched.length,
+            percentClaimed: coverage,
+          }
+        : undefined,
+    [settled, highlightedCells, cells.length, matched.length, coverage],
+  )
 
-  function handleSave(next: Territory) {
-    setActive(next)
-    setSaved(next)
-    setLoadedFromUrl(false)
-    setEditing(false)
-    // The share panel's URL is derived from `active`; close it so a stale link
-    // isn't left showing after an edit.
-    setSharing(false)
+  // Cache the live coverage back onto the active saved territory so its list
+  // card shows real numbers next time without re-fetching. setStats no-ops when
+  // the snapshot is unchanged, so this won't loop.
+  useEffect(() => {
+    if (savedMapId && liveStats) setStats(savedMapId, liveStats)
+  }, [savedMapId, liveStats, setStats])
+
+  function clearUrlParams() {
+    window.history.replaceState(null, "", window.location.pathname)
   }
 
-  // Shareable link for the active territory — the current page URL with the
-  // territory encoded as query params. Built on demand (the address bar is no
-  // longer updated automatically). Null while there's no active territory.
-  const shareUrl = active
-    ? window.location.origin + window.location.pathname + serializeTerritoryToUrl(active)
+  function dismissShared() {
+    setShared(null)
+    setPreviewShared(false)
+    clearUrlParams()
+  }
+
+  function openCreate() {
+    setEditor({ mode: "create", id: null, initial: defaultDraft(), fromShared: false })
+    setView("editor")
+  }
+
+  function openEdit(t: Territory) {
+    setEditor({ mode: "edit", id: t.id, initial: draftFrom(t), fromShared: false })
+    setView("editor")
+  }
+
+  function openSaveShared() {
+    if (!shared) return
+    setEditor({ mode: "create", id: null, initial: draftFrom(shared), fromShared: true })
+    setView("editor")
+  }
+
+  function handleEditorSave(input: TerritoryInput) {
+    if (editor?.mode === "edit" && editor.id) {
+      updateTerritory(editor.id, input)
+    } else {
+      addTerritory(input) // also makes the new territory active
+      setPreviewShared(false)
+      if (editor?.fromShared) dismissShared()
+    }
+    setEditor(null)
+    setView("list")
+  }
+
+  function closeEditor() {
+    setEditor(null)
+    setView("list")
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return
+    removeTerritory(deleteTarget.id)
+    if (editor?.id === deleteTarget.id) closeEditor()
+    setDeleteTarget(null)
+  }
+
+  function activateSaved(id: string) {
+    setPreviewShared(false)
+    setActive(id)
+  }
+
+  // Shareable link for the share dialog's target territory.
+  const shareUrl = shareTarget
+    ? window.location.origin +
+      window.location.pathname +
+      serializeTerritoryToUrl(shareTarget)
     : null
 
   async function handleCopy() {
@@ -163,19 +250,44 @@ function App() {
     }
   }
 
+  const isEditor = view === "editor" && editor != null
+  const showEmpty = territories.length === 0 && !shared
+
   return (
     <div className="relative h-dvh w-screen overflow-hidden">
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
-      <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-80">
+      <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
         <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-2">
-            <span className="flex items-center gap-2">
-              <HexMark />
-              iNat Territory
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              {isEditor ? (
+                <button
+                  type="button"
+                  onClick={closeEditor}
+                  aria-label="Back to territories"
+                  className="-ml-1 grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <ChevronLeft className="size-4" />
+                </button>
+              ) : (
+                <HexMark />
+              )}
+              <span className="truncate text-base font-bold tracking-tight">
+                {isEditor
+                  ? editor.mode === "create"
+                    ? "New territory"
+                    : "Edit territory"
+                  : "My territories"}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
-              <StatusBadge state={obsState(obs)} />
+              {!isEditor && <StatusBadge state={obsState(obs)} />}
+              {!isEditor && territories.length > 0 && (
+                <span className="rounded-full bg-inat/10 px-2 py-0.5 font-mono text-xs font-bold text-inat-strong">
+                  {territories.length}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setCollapsed((c) => !c)}
@@ -190,154 +302,132 @@ function App() {
                 )}
               </button>
             </div>
-          </CardTitle>
+          </div>
         </CardHeader>
+
         {!collapsed && (
-        <CardContent className="space-y-3 text-sm">
-          {editing ? (
-            <TerritoryEditor
-              initial={active ?? defaultDraft()}
-              showOverwriteWarning={showOverwriteWarning}
-              onSave={handleSave}
-              onCancel={active ? () => setEditing(false) : undefined}
-            />
-          ) : active ? (
-            <>
-              {/* Progress hero — the ring gauge carries the headline number. */}
-              {!MAPBOX_TOKEN ? (
-                <p className="text-destructive">
-                  Missing VITE_MAPBOX_TOKEN — add it to your .env file.
-                </p>
-              ) : obs.isError ? (
-                <p className="text-destructive">
-                  {obs.error instanceof Error ? obs.error.message : "Failed to load observations."}
-                </p>
-              ) : (
-                <div className="flex items-center gap-4 py-1">
-                  <RingGauge pct={coverage} muted={obs.isPending} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Cells claimed
+          <CardContent className="text-sm">
+            {isEditor ? (
+              <TerritoryEditor
+                initial={editor.initial}
+                mode={editor.mode}
+                onSave={handleEditorSave}
+                onCancel={closeEditor}
+                onDelete={
+                  editor.mode === "edit" && editor.id
+                    ? () => {
+                        const t = territories.find((x) => x.id === editor.id)
+                        if (t) setDeleteTarget(t)
+                      }
+                    : undefined
+                }
+              />
+            ) : (
+              <div className="space-y-3">
+                {!MAPBOX_TOKEN && (
+                  <p className="text-xs text-destructive">
+                    Missing VITE_MAPBOX_TOKEN — add it to your .env file.
+                  </p>
+                )}
+
+                {showEmpty ? (
+                  <EmptyState onNew={openCreate} />
+                ) : (
+                  <>
+                    <div className="space-y-2.5">
+                      {shared && (
+                        <SharedTerritoryCard
+                          territory={shared}
+                          active={previewShared}
+                          stats={previewShared ? liveStats : undefined}
+                          pending={previewShared && obs.isPending}
+                          onActivate={() => setPreviewShared(true)}
+                          onSave={openSaveShared}
+                          onDismiss={dismissShared}
+                        />
+                      )}
+                      {territories.map((t) => {
+                        const onMap = t.id === savedMapId
+                        return (
+                          <TerritoryCard
+                            key={t.id}
+                            territory={t}
+                            active={onMap}
+                            stats={onMap && liveStats ? liveStats : t.stats}
+                            pending={onMap && obs.isPending}
+                            onActivate={() => activateSaved(t.id)}
+                            onEdit={() => openEdit(t)}
+                            onShare={() => setShareTarget(t)}
+                            onDelete={() => setDeleteTarget(t)}
+                          />
+                        )
+                      })}
                     </div>
-                    <div className="mt-0.5 font-mono text-2xl font-bold tabular-nums">
-                      {obs.isPending ? "—" : highlightedCells}
-                      <span className="font-medium text-muted-foreground">
-                        {" "}/ {cells.length}
-                      </span>
-                    </div>
-                    <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-inat/10 px-2.5 py-1 text-xs font-semibold text-inat-strong">
-                      <span className="font-mono tabular-nums">
-                        {obs.isPending ? "…" : matched.length}
-                      </span>{" "}
-                      observations
-                    </span>
-                  </div>
-                </div>
-              )}
 
-              {!obscuredNoticeDismissed && (
-                <div className="relative rounded-md border border-border bg-muted/50 px-3 py-2 pr-7 text-xs text-muted-foreground">
-                  Observations with obscured locations aren’t included.
-                  <button
-                    type="button"
-                    onClick={dismissObscuredNotice}
-                    aria-label="Dismiss notice"
-                    className="absolute right-1.5 top-1.5 rounded p-0.5 hover:bg-muted hover:text-foreground"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              )}
+                    {!obscuredNoticeDismissed && mapTerritory && <ObscuredNotice />}
 
-              <hr className="border-border" />
-
-              <div className="space-y-px">
-                <Row
-                  label="iNat user"
-                  value={
-                    <a
-                      href={`https://www.inaturalist.org/observations?place_id=any&user_id=${encodeURIComponent(active.username)}&verifiable=any`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-medium text-inat-strong underline-offset-2 hover:underline"
-                    >
-                      @{active.username}
-                    </a>
-                  }
-                />
-                <Row label="Center" value={`${active.lat}, ${active.lng}`} mono />
-                <Row label="Radius" value={`${active.radius} ${active.units}`} mono />
-                <Row
-                  label="Cell size"
-                  value={active.cellSize[0].toUpperCase() + active.cellSize.slice(1)}
-                />
-                <Row
-                  label="Year"
-                  value={active.year === "all" ? "All years" : String(year)}
-                />
-                <Row
-                  label="Categories"
-                  value={
-                    active.categories.length === 0
-                      ? "All"
-                      : active.categories.map(categoryLabel).join(", ")
-                  }
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setEditing(true)}
-                >
-                  Edit territory
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setSharing(true)}
-                >
-                  <Share2 />
-                  Share
-                </Button>
-              </div>
-
-              <Dialog open={sharing} onOpenChange={setSharing}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Share territory</DialogTitle>
-                    <DialogDescription>
-                      This link opens the map on your current territory.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      readOnly
-                      value={shareUrl ?? ""}
-                      onFocus={(e) => e.currentTarget.select()}
-                      className="text-xs"
-                      aria-label="Shareable link"
-                    />
                     <Button
-                      size="icon-sm"
-                      variant="outline"
-                      onClick={handleCopy}
-                      aria-label={copied ? "Copied" : "Copy link"}
-                      title={copied ? "Copied" : "Copy link"}
+                      className="w-full bg-inat text-white hover:bg-inat/90"
+                      onClick={openCreate}
                     >
-                      {copied ? <Check /> : <Copy />}
+                      <Plus />
+                      New territory
                     </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-            </>
-          ) : null}
-        </CardContent>
+                  </>
+                )}
+              </div>
+            )}
+          </CardContent>
         )}
       </Card>
+
+      <Dialog open={shareTarget != null} onOpenChange={(o) => !o && setShareTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share territory</DialogTitle>
+            <DialogDescription>
+              This link opens the map on “{shareTarget?.name}”.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2">
+            <Input
+              readOnly
+              value={shareUrl ?? ""}
+              onFocus={(e) => e.currentTarget.select()}
+              className="text-xs"
+              aria-label="Shareable link"
+            />
+            <Button
+              size="icon-sm"
+              variant="outline"
+              onClick={handleCopy}
+              aria-label={copied ? "Copied" : "Copy link"}
+              title={copied ? "Copied" : "Copy link"}
+            >
+              {copied ? <Check /> : <Copy />}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteTarget != null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete territory?</DialogTitle>
+            <DialogDescription>
+              “{deleteTarget?.name}” will be removed. This can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -352,24 +442,42 @@ function obsState(obs: ReturnType<typeof useObservations>): ObsState {
   return "idle"
 }
 
-function Row({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string
-  value: ReactNode
-  /** Render the value in the mono face — for coordinates and measurements. */
-  mono?: boolean
-}) {
+function EmptyState({ onNew }: { onNew: () => void }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 py-1.5">
-      <span className="shrink-0 whitespace-nowrap text-muted-foreground">{label}</span>
+    <div className="px-2 py-8 text-center">
       <span
-        className={`truncate text-right font-medium ${mono ? "font-mono tabular-nums" : ""}`}
+        aria-hidden
+        className="mx-auto mb-4 grid h-14 w-16 place-items-center bg-inat/10"
+        style={{ clipPath: "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)" }}
       >
-        {value}
+        <Plus className="size-6 text-inat-strong" />
       </span>
+      <div className="text-base font-bold">No territories yet</div>
+      <p className="mx-auto mt-1.5 text-pretty text-[13px] leading-relaxed text-muted-foreground">
+        Create your first territory to start claiming cells around a spot you
+        explore.
+      </p>
+      <Button className="mt-5 w-full bg-inat text-white hover:bg-inat/90" onClick={onNew}>
+        <Plus />
+        New territory
+      </Button>
+    </div>
+  )
+}
+
+function ObscuredNotice() {
+  const dismiss = useSettings((s) => s.dismissObscuredNotice)
+  return (
+    <div className="relative rounded-md border border-border bg-muted/50 px-3 py-2 pr-7 text-xs text-muted-foreground">
+      Observations with obscured locations aren’t included.
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss notice"
+        className="absolute right-1.5 top-1.5 rounded p-0.5 hover:bg-muted hover:text-foreground"
+      >
+        <X className="size-3.5" />
+      </button>
     </div>
   )
 }
@@ -380,7 +488,7 @@ function HexMark() {
     <span
       aria-hidden
       className="size-3.5 shrink-0 bg-inat"
-      style={{ clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)" }}
+      style={{ clipPath: "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)" }}
     />
   )
 }

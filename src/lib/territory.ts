@@ -55,11 +55,28 @@ export function categoryLabel(value: Category): string {
 }
 
 /**
+ * Cached coverage stats for a territory, snapshotted from the last time it was
+ * the active (on-map) territory. Lets the list show each card's numbers without
+ * re-fetching observations for every territory. Absent until first computed.
+ */
+export interface TerritoryStats {
+  cellsClaimed: number
+  cellsTotal: number
+  observations: number
+  /** 0–100, rounded. */
+  percentClaimed: number
+}
+
+/**
  * A user's "territory" — everything editable in the UI. Stored in display units
  * (km derivations happen at the geometry/API edge). Persisted to the territory
  * store and round-tripped through the URL for sharing.
  */
 export interface Territory {
+  /** Stable identity, assigned on creation. */
+  id: string
+  /** User-facing label, e.g. "Home patch". */
+  name: string
   /** User-facing [lat, lng] convention. */
   lat: number
   lng: number
@@ -72,6 +89,15 @@ export interface Territory {
   year: YearFilter
   /** iconic-taxa filter; empty means all categories. */
   categories: Category[]
+  /** Epoch ms of the last create/edit — drives the "updated" meta line. */
+  updatedAt: number
+  /** Last-known coverage snapshot for the list cards. */
+  stats?: TerritoryStats
+}
+
+/** Mint a unique territory id. */
+export function newTerritoryId(): string {
+  return crypto.randomUUID()
 }
 
 const CELL_SIZES: CellSize[] = ["small", "medium", "large"]
@@ -83,6 +109,7 @@ const CELL_SIZES: CellSize[] = ["small", "medium", "large"]
  * size. A full {@link Territory} is structurally assignable to this.
  */
 export interface TerritoryDraft {
+  name: string
   lat: number | null
   lng: number | null
   username: string
@@ -93,13 +120,18 @@ export interface TerritoryDraft {
   categories: Category[]
 }
 
+/** The fields the editor produces on save — identity/timestamp are added by
+ * the store, not the form. */
+export type TerritoryInput = Omit<Territory, "id" | "updatedAt" | "stats">
+
 /**
- * Starting point for creating a territory from scratch: no location or
+ * Starting point for creating a territory from scratch: no name, location, or
  * username yet, with the locale's default units and a round default radius.
  */
 export function defaultDraft(): TerritoryDraft {
   const units = defaultUnits()
   return {
+    name: "",
     lat: null,
     lng: null,
     username: "",
@@ -108,6 +140,21 @@ export function defaultDraft(): TerritoryDraft {
     cellSize: DEFAULT_CELL_SIZE,
     year: "all",
     categories: [],
+  }
+}
+
+/** Seed a create-form draft from an existing territory (e.g. a shared one). */
+export function draftFrom(t: Territory): TerritoryDraft {
+  return {
+    name: t.name,
+    lat: t.lat,
+    lng: t.lng,
+    username: t.username,
+    units: t.units,
+    radius: t.radius,
+    cellSize: t.cellSize,
+    year: t.year,
+    categories: t.categories,
   }
 }
 
@@ -137,38 +184,6 @@ export function resolveYear(t: Territory, currentYear: number): number | null {
   return t.year === "current" ? currentYear : currentYear - 1
 }
 
-// --- Equality ------------------------------------------------------------
-
-const EPSILON = 1e-6
-
-function numEq(a: number, b: number): boolean {
-  return Math.abs(a - b) < EPSILON
-}
-
-/** Order-insensitive equality for the category set. */
-function categoriesEqual(a: Category[], b: Category[]): boolean {
-  if (a.length !== b.length) return false
-  const sortedB = [...b].sort()
-  return [...a].sort().every((v, i) => v === sortedB[i])
-}
-
-/**
- * Field-by-field equality with an epsilon for numeric fields, so a mi↔km
- * round-trip that nets back to the same value doesn't read as "different".
- */
-export function territoryEquals(a: Territory, b: Territory): boolean {
-  return (
-    numEq(a.lat, b.lat) &&
-    numEq(a.lng, b.lng) &&
-    a.username === b.username &&
-    a.units === b.units &&
-    numEq(a.radius, b.radius) &&
-    a.cellSize === b.cellSize &&
-    a.year === b.year &&
-    categoriesEqual(a.categories, b.categories)
-  )
-}
-
 // --- Parsing / validation ------------------------------------------------
 
 /**
@@ -192,11 +207,17 @@ function round(value: number, dp: number): number {
   return Math.round(value * f) / f
 }
 
+/** Display name for a shared territory whose link carried no name. */
+export const SHARED_FALLBACK_NAME = "Shared territory"
+
 /**
  * Read a complete territory from a URL query string. Requires a valid `lat`,
  * `lng`, AND `username` (the three fields with no default) — if any is missing
  * the link doesn't encode a renderable territory and this returns null. The
  * remaining fields fall back per-field to the locale/config defaults.
+ *
+ * The result is transient (a shared territory the user is previewing), so it
+ * gets a fresh id and `updatedAt` but is never persisted unless the user saves.
  */
 export function parseTerritoryFromUrl(search: string): Territory | null {
   const p = new URLSearchParams(search)
@@ -205,6 +226,8 @@ export function parseTerritoryFromUrl(search: string): Territory | null {
 
   const username = p.get("u")?.trim()
   if (!username) return null
+
+  const name = p.get("n")?.trim() ?? ""
 
   const un = p.get("un")
   const units: Units = un === "mi" || un === "km" ? un : defaultUnits()
@@ -229,7 +252,19 @@ export function parseTerritoryFromUrl(search: string): Territory | null {
         .filter((s): s is Category => CATEGORY_VALUES.includes(s as Category))
     : []
 
-  return { lat: ll.lat, lng: ll.lng, username, units, radius, cellSize, year, categories }
+  return {
+    id: newTerritoryId(),
+    name,
+    lat: ll.lat,
+    lng: ll.lng,
+    username,
+    units,
+    radius,
+    cellSize,
+    year,
+    categories,
+    updatedAt: Date.now(),
+  }
 }
 
 /** Serialize a territory to a query string (leading "?"), with tidy precision. */
@@ -242,6 +277,7 @@ export function serializeTerritoryToUrl(t: Territory): string {
     r: String(round(t.radius, 2)),
     c: t.cellSize,
   })
+  if (t.name.trim()) p.set("n", t.name.trim())
   // Only encode non-default filters to keep shared URLs tidy.
   if (t.year !== "all") p.set("y", t.year)
   if (t.categories.length) p.set("cat", t.categories.join(","))
