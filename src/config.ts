@@ -9,8 +9,9 @@ import type { Units, CellSize } from "./lib/territory";
 // Public access token, read from .env (VITE_MAPBOX_TOKEN=...)
 export const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string;
 
-// Base map style.
+// Base map style, and the satellite style toggled via the on-map button.
 export const MAP_STYLE = "mapbox://styles/mapbox/outdoors-v12";
+export const SATELLITE_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
 
 // --- Area of interest -----------------------------------------------------
 // The center is part of each user's territory (set in the UI / shared via URL),
@@ -75,20 +76,43 @@ export function defaultUnits(): Units {
   return typeof navigator !== "undefined" && navigator.language === "en-US" ? "mi" : "km";
 }
 
-// Style of the honeycomb cell borders.
+// Style of the honeycomb cell borders. The dark slate reads well on the base
+// map but vanishes against satellite imagery, so the satellite variant switches
+// to a bright red — drawn at full opacity, a little wider, and over a dark
+// casing (see HEX_SATELLITE_CASING) so the thin lines stay legible on imagery.
 export const HEX_BORDER_STYLE = {
   color: "#334155",
   width: 0.75,
   opacity: 0.6,
 };
+export const HEX_BORDER_STYLE_SATELLITE = {
+  color: "#fca5a5",
+  width: 1.1,
+  opacity: 1,
+};
 
 // Style of the frame that traces the outer contour of the whole grid — a
 // slightly darker, heavier line than the per-cell borders so the territory
-// reads as a single framed shape.
+// reads as a single framed shape. The satellite variant uses a bright red over
+// the same dark casing to stay legible over imagery.
 export const HEX_FRAME_STYLE = {
   color: "#1e293b",
   width: 2,
   opacity: 0.85,
+};
+export const HEX_FRAME_STYLE_SATELLITE = {
+  color: "#ef4444",
+  width: 2.5,
+  opacity: 1,
+};
+
+// Dark halo drawn *beneath* the satellite-mode lines: a wider, semi-transparent
+// black casing that separates the bright line from whatever is under it. The
+// casing width is the line's own width plus `widthDelta`.
+export const HEX_SATELLITE_CASING = {
+  color: "#0a0a0a",
+  opacity: 0.55,
+  widthDelta: 2,
 };
 
 // --- iNaturalist ----------------------------------------------------------

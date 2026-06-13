@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react"
-import { ChevronDown, ChevronUp, X } from "lucide-react"
+import { Check, ChevronDown, ChevronUp, Copy, Share2, X } from "lucide-react"
 import type { FeatureCollection, Point } from "geojson"
 import { MapView } from "@/components/MapView"
 import { RingGauge } from "@/components/RingGauge"
@@ -7,8 +7,14 @@ import { TerritoryEditor } from "@/components/TerritoryEditor"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { INAT_MAX_PAGES, MAPBOX_TOKEN } from "@/config"
 import { buildCellsOutline, buildHexGrid, markObservedCells } from "@/lib/hexgrid"
 import { useObservations } from "@/lib/useObservations"
@@ -46,6 +52,10 @@ function App() {
   const [editing, setEditing] = useState(initial.active == null)
   // Collapse the panel down to just its header (handy on small screens).
   const [collapsed, setCollapsed] = useState(false)
+  // Whether the share panel (URL + copy button) is open, and a short-lived
+  // "copied" confirmation.
+  const [sharing, setSharing] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const setSaved = useTerritoryStore((s) => s.setSaved)
   const savedTerritory = useTerritoryStore((s) => s.saved)
@@ -76,10 +86,6 @@ function App() {
   // cell geometry, so it's recomputed on a territory change, not when
   // observations arrive.
   const outline = useMemo(() => buildCellsOutline(cells), [cells])
-
-  // Whether to draw cells without any finds — persisted in the settings store.
-  const showIncomplete = useSettings((s) => s.showIncomplete)
-  const setShowIncomplete = useSettings((s) => s.setShowIncomplete)
 
   // One-time notice that obscured-location observations are excluded.
   const obscuredNoticeDismissed = useSettings((s) => s.obscuredNoticeDismissed)
@@ -132,14 +138,34 @@ function App() {
   function handleSave(next: Territory) {
     setActive(next)
     setSaved(next)
-    window.history.replaceState(null, "", serializeTerritoryToUrl(next))
     setLoadedFromUrl(false)
     setEditing(false)
+    // The share panel's URL is derived from `active`; close it so a stale link
+    // isn't left showing after an edit.
+    setSharing(false)
+  }
+
+  // Shareable link for the active territory — the current page URL with the
+  // territory encoded as query params. Built on demand (the address bar is no
+  // longer updated automatically). Null while there's no active territory.
+  const shareUrl = active
+    ? window.location.origin + window.location.pathname + serializeTerritoryToUrl(active)
+    : null
+
+  async function handleCopy() {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard access can be denied; the URL stays visible to copy manually.
+    }
   }
 
   return (
     <div className="relative h-dvh w-screen overflow-hidden">
-      <MapView grid={grid} outline={outline} points={points} showIncomplete={showIncomplete} center={center} radiusKm={rKm} />
+      <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
       <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-80">
         <CardHeader>
@@ -259,33 +285,54 @@ function App() {
                 />
               </div>
 
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                onClick={() => setEditing(true)}
-              >
-                Edit territory
-              </Button>
-
-              <hr className="border-border" />
-
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <Label htmlFor="show-incomplete" className="font-medium">
-                    Show incomplete cells
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Outline cells you haven’t reached
-                  </p>
-                </div>
-                <Switch
-                  id="show-incomplete"
-                  checked={showIncomplete}
-                  onCheckedChange={setShowIncomplete}
-                  className="data-checked:bg-inat"
-                />
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setEditing(true)}
+                >
+                  Edit territory
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setSharing(true)}
+                >
+                  <Share2 />
+                  Share
+                </Button>
               </div>
+
+              <Dialog open={sharing} onOpenChange={setSharing}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Share territory</DialogTitle>
+                    <DialogDescription>
+                      This link opens the map on your current territory.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      readOnly
+                      value={shareUrl ?? ""}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="text-xs"
+                      aria-label="Shareable link"
+                    />
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      onClick={handleCopy}
+                      aria-label={copied ? "Copied" : "Copy link"}
+                      title={copied ? "Copied" : "Copy link"}
+                    >
+                      {copied ? <Check /> : <Copy />}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </>
           ) : null}
         </CardContent>

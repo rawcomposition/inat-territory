@@ -6,9 +6,6 @@ import { persist } from "zustand/middleware"
  * reloads. Add new toggles here as the prototype grows.
  */
 interface SettingsState {
-  /** Whether to draw cells without any finds. */
-  showIncomplete: boolean
-  setShowIncomplete: (value: boolean) => void
   /** Whether the user has dismissed the obscured-locations notice. */
   obscuredNoticeDismissed: boolean
   dismissObscuredNotice: () => void
@@ -17,8 +14,6 @@ interface SettingsState {
 export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
-      showIncomplete: true,
-      setShowIncomplete: (value) => set({ showIncomplete: value }),
       obscuredNoticeDismissed: false,
       dismissObscuredNotice: () => set({ obscuredNoticeDismissed: true }),
     }),
