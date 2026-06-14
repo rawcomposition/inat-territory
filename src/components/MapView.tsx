@@ -364,11 +364,14 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
       }
       const id = nearest?.properties?.id
       if (id != null) {
-        window.open(
-          `https://www.inaturalist.org/observations/${id}`,
-          "_blank",
-          "noopener,noreferrer",
-        )
+        // Use a real anchor click rather than window.open: in an iOS standalone
+        // PWA, window.open leaves a blank browser window behind that the user
+        // has to manually close. An <a target="_blank"> opens cleanly.
+        const link = document.createElement("a")
+        link.href = `https://www.inaturalist.org/observations/${id}`
+        link.target = "_blank"
+        link.rel = "noopener noreferrer"
+        link.click()
       }
     })
     map.on("mouseenter", POINTS_HIT_LAYER, () => {
