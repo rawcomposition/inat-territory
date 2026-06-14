@@ -1,6 +1,11 @@
 /**
  * Minimal iNaturalist API client for the prototype.
- * Docs: https://api.inaturalist.org/v1/docs/
+ * Docs: https://api.inaturalist.org/v2/docs/
+ *
+ * Uses the v2 endpoint, which supports `fields` to limit the response to only
+ * what we need (id + geojson). v1 has no field selection and always returns the
+ * full observation object. No auth is required for field selection; the only
+ * thing auth affects is visibility of obscured coordinates, which we don't need.
  */
 
 export interface InatObservation {
@@ -9,7 +14,11 @@ export interface InatObservation {
   coords: [number, number]
 }
 
-const API = "https://api.inaturalist.org/v1/observations"
+const API = "https://api.inaturalist.org/v2/observations"
+
+// v2 returns only `uuid` per record by default; opt into exactly the fields we
+// consume. `geojson` carries the (obscured-when-applicable) point coordinates.
+const FIELDS = "id,geojson"
 
 /**
  * Fetch a user's georeferenced observations within `radiusKm` of `center`.
@@ -39,18 +48,23 @@ export async function fetchObservations(
     url.searchParams.set("per_page", String(perPage))
     url.searchParams.set("page", String(page))
     url.searchParams.set("order_by", "observed_on")
+    url.searchParams.set("fields", FIELDS)
     if (year != null) url.searchParams.set("year", String(year))
     if (categories.length) url.searchParams.set("iconic_taxa", categories.join(","))
 
     const res = await fetch(url)
     if (!res.ok) {
-      // iNat returns a JSON body with an `error` field (e.g. an unknown
-      // username yields `{"error":"Unknown user_id <name>","status":422}`).
+      // iNat v2 returns a JSON body with an `errors` array (e.g. an unknown
+      // username yields
+      // `{"status":"422","errors":[{"message":"Unknown user_id <name>"}]}`).
       // Surface a clear message rather than the bare HTTP status.
       const apiError = await res
         .clone()
         .json()
-        .then((b) => (typeof b?.error === "string" ? (b.error as string) : null))
+        .then((b) => {
+          const msg = b?.errors?.[0]?.message
+          return typeof msg === "string" ? msg : null
+        })
         .catch(() => null)
 
       if (apiError?.startsWith("Unknown user_id")) {
