@@ -21,6 +21,7 @@ import {
   type YearFilter,
 } from "@/lib/territory"
 import { useGeolocation } from "@/lib/useGeolocation"
+import { MAX_RADIUS } from "@/config"
 
 /** Round a coordinate to the 6 decimal places we store / display. */
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6
@@ -119,6 +120,10 @@ export function TerritoryEditor({
       setError("Radius must be a positive number.")
       return
     }
+    if (r > MAX_RADIUS[units]) {
+      setError(`Radius must be less than ${MAX_RADIUS[units]} ${units}.`)
+      return
+    }
     const user = username.trim()
     if (!user) {
       setError("Enter an iNaturalist username.")
@@ -191,6 +196,7 @@ export function TerritoryEditor({
             id="te-radius"
             type="number"
             min={0}
+            max={MAX_RADIUS[units]}
             step="0.1"
             value={radius}
             onChange={(e) => setRadius(e.target.value)}

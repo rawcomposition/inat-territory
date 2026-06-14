@@ -38,6 +38,11 @@ export const AREA_HEX_ROTATION_DEG = 30;
 // circle; iNaturalist observations are queried within a circle of this radius.
 export const DEFAULT_RADIUS: Record<Units, number> = { mi: 5, km: 8 };
 
+// Largest radius a territory may use, per display unit. The editor clamps input
+// to this and iNaturalist observations are queried within at most this radius,
+// keeping network usage and grid size bounded.
+export const MAX_RADIUS: Record<Units, number> = { mi: 100, km: 100 };
+
 // Whether to draw the outline marking the area boundary on the map.
 export const SHOW_RADIUS = false;
 
