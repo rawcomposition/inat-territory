@@ -325,7 +325,6 @@ function App() {
 
   return (
     <div className="app-shell relative w-full overflow-hidden">
-      <LogoDebug />
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
       <Card className="absolute left-4 top-[calc(env(safe-area-inset-top)_+_1rem)] z-10 flex max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
@@ -635,49 +634,6 @@ function StatusBadge({ state }: { state: ObsState }) {
   // The "error" state is surfaced per-card (clickable, with details) on the
   // active TerritoryCard, so the header doesn't repeat it.
   return null
-}
-
-// TEMP: report exactly what's happening to the Mapbox logo in the PWA — is it
-// display:none, off-screen, or covered by another element? Remove once solved.
-function LogoDebug() {
-  const [, force] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => force((n) => n + 1), 1000)
-    return () => clearInterval(t)
-  }, [])
-  const logos = document.querySelectorAll<HTMLElement>(".mapboxgl-ctrl-logo")
-  const logo = logos[0]
-  let lines: string[]
-  if (!logo) {
-    lines = ["logo: NOT IN DOM"]
-  } else {
-    const cs = getComputedStyle(logo)
-    const r = logo.getBoundingClientRect()
-    // Walk up reporting each ancestor's size + display, to find which level
-    // collapses (computed width says CSS, rect says laid-out reality).
-    const chain: string[] = []
-    let el: HTMLElement | null = logo
-    for (let i = 0; el && i < 4; i++) {
-      const ecs = getComputedStyle(el)
-      const er = el.getBoundingClientRect()
-      const cls = (el.className || "").toString().split(" ").pop() || el.tagName
-      chain.push(`${cls}:${Math.round(er.width)}x${Math.round(er.height)} ${ecs.display}`)
-      el = el.parentElement
-    }
-    lines = [
-      `count ${logos.length} conn ${logo.isConnected} offP ${logo.offsetParent ? "yes" : "NULL"}`,
-      `computed w${cs.width} h${cs.height}`,
-      `rect w${Math.round(r.width)} h${Math.round(r.height)} @${Math.round(r.left)},${Math.round(r.top)}`,
-      ...chain.map((c, i) => `${i}: ${c}`),
-    ]
-  }
-  return (
-    <div className="pointer-events-none absolute top-1 left-1 z-[9999] rounded bg-black/85 px-1.5 py-1 font-mono text-[10px] leading-tight text-white">
-      {lines.map((l, i) => (
-        <div key={i}>{l}</div>
-      ))}
-    </div>
-  )
 }
 
 export default App

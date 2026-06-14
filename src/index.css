@@ -179,3 +179,12 @@ html[data-standalone] .app-shell {
     display: none;
   }
 }
+
+/* Keep the required Mapbox wordmark visible. Mapbox's LogoControl can lose a
+ * load race — it sets its wrapper to inline display:none before the style's
+ * source metadata resolves, and on iOS PWA it never un-hides. We use official
+ * Mapbox styles, so the logo is required by ToS; force its wrapper shown
+ * (!important overrides the inline style). bottom-left holds only the logo. */
+.mapboxgl-ctrl-bottom-left .mapboxgl-ctrl {
+  display: block !important;
+}
