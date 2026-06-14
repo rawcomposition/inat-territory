@@ -59,7 +59,7 @@ export function RingGauge({
 
 /**
  * Compact variant of {@link RingGauge} for the territory list cards: a thinner
- * ring with the bare integer percent (no "%") centered in it.
+ * ring with the integer percent centered in it.
  */
 export function MiniRing({
   pct,
@@ -151,7 +151,7 @@ export function MiniRing({
           }`}
           style={{ fontSize: Math.round(size * 0.28) }}
         >
-          {muted ? "—" : value}
+          {muted ? "—" : `${value}%`}
         </span>
       </div>
     </div>

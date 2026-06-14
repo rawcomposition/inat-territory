@@ -165,7 +165,7 @@ function App() {
       features: matched.map((o) => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: o.coords },
-        properties: { id: o.id, species: o.speciesGuess },
+        properties: { id: o.id },
       })),
     }),
     [matched],
@@ -327,52 +327,53 @@ function App() {
     <div className="relative h-dvh w-screen overflow-hidden">
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
-      <Card className="absolute left-4 top-4 z-10 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
+      <Card className="absolute left-4 top-[calc(env(safe-area-inset-top)_+_1rem)] z-10 flex max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
         <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              {isEditor ? (
-                <button
-                  type="button"
-                  onClick={closeEditor}
-                  aria-label="Back to territories"
-                  className="-ml-1 grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  <ChevronLeft className="size-4" />
-                </button>
-              ) : (
-                <HexMark />
-              )}
-              <span className="truncate text-base font-bold tracking-tight">
-                {isEditor
-                  ? editor.mode === "create"
-                    ? "New territory"
-                    : "Edit territory"
-                  : "My territories"}
-              </span>
-            </div>
+          {isEditor ? (
             <div className="flex items-center gap-2">
-              {!isEditor && <StatusBadge state={obsState(obs)} />}
-              {!isEditor && territories.length > 0 && (
-                <span className="rounded-full bg-inat/10 px-2 py-0.5 font-mono text-xs font-bold text-inat-strong">
-                  {territories.length}
-                </span>
-              )}
               <button
                 type="button"
-                onClick={() => setCollapsed((c) => !c)}
-                aria-label={collapsed ? "Expand panel" : "Collapse panel"}
-                aria-expanded={!collapsed}
-                className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={closeEditor}
+                aria-label="Back to territories"
+                className="-ml-1 grid size-6 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               >
-                {collapsed ? (
-                  <ChevronDown className="size-4" />
-                ) : (
-                  <ChevronUp className="size-4" />
-                )}
+                <ChevronLeft className="size-4" />
               </button>
+              <span className="truncate text-base font-bold tracking-tight">
+                {editor.mode === "create" ? "New territory" : "Edit territory"}
+              </span>
             </div>
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-label={collapsed ? "Expand panel" : "Collapse panel"}
+              aria-expanded={!collapsed}
+              className="group -m-1 flex w-[calc(100%+0.5rem)] items-center justify-between gap-2 p-1 text-left"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <HexMark />
+                <span className="truncate text-base font-bold tracking-tight">
+                  My territories
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusBadge state={obsState(obs)} />
+                {territories.length > 0 && (
+                  <span className="rounded-full bg-inat/10 px-2 py-0.5 font-mono text-xs font-bold text-inat-strong">
+                    {territories.length}
+                  </span>
+                )}
+                <span className="p-1 text-muted-foreground">
+                  {collapsed ? (
+                    <ChevronDown className="size-4" />
+                  ) : (
+                    <ChevronUp className="size-4" />
+                  )}
+                </span>
+              </div>
+            </button>
+          )}
         </CardHeader>
 
         {!collapsed && (

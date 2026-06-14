@@ -7,7 +7,6 @@ export interface InatObservation {
   id: number
   /** [longitude, latitude] */
   coords: [number, number]
-  speciesGuess: string | null
 }
 
 const API = "https://api.inaturalist.org/v1/observations"
@@ -85,11 +84,7 @@ export async function fetchObservations(
     for (const r of results) {
       const coords = r.geojson?.coordinates as [number, number] | undefined
       if (coords) {
-        all.push({
-          id: r.id,
-          coords,
-          speciesGuess: r.species_guess ?? r.taxon?.name ?? null,
-        })
+        all.push({ id: r.id, coords })
       }
     }
 
