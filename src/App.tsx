@@ -645,26 +645,30 @@ function LogoDebug() {
     const t = setInterval(() => force((n) => n + 1), 1000)
     return () => clearInterval(t)
   }, [])
-  const logo = document.querySelector<HTMLElement>(".mapboxgl-ctrl-logo")
+  const logos = document.querySelectorAll<HTMLElement>(".mapboxgl-ctrl-logo")
+  const logo = logos[0]
   let lines: string[]
   if (!logo) {
     lines = ["logo: NOT IN DOM"]
   } else {
     const cs = getComputedStyle(logo)
     const r = logo.getBoundingClientRect()
-    // What element actually sits at the logo's center? If it isn't the logo,
-    // something is covering it.
-    const cx = Math.round(r.left + r.width / 2)
-    const cy = Math.round(r.top + r.height / 2)
-    const hit = document.elementFromPoint(cx, cy)
-    const hitDesc = hit
-      ? `${hit.tagName.toLowerCase()}.${(hit.className || "").toString().split(" ")[0]}`
-      : "none"
+    // Walk up reporting each ancestor's size + display, to find which level
+    // collapses (computed width says CSS, rect says laid-out reality).
+    const chain: string[] = []
+    let el: HTMLElement | null = logo
+    for (let i = 0; el && i < 4; i++) {
+      const ecs = getComputedStyle(el)
+      const er = el.getBoundingClientRect()
+      const cls = (el.className || "").toString().split(" ").pop() || el.tagName
+      chain.push(`${cls}:${Math.round(er.width)}x${Math.round(er.height)} ${ecs.display}`)
+      el = el.parentElement
+    }
     lines = [
-      `disp ${cs.display} vis ${cs.visibility} op ${cs.opacity}`,
-      `rect x${Math.round(r.left)} y${Math.round(r.top)} w${Math.round(r.width)} h${Math.round(r.height)}`,
-      `winH ${window.innerHeight}`,
-      `at center: ${hitDesc}`,
+      `count ${logos.length} conn ${logo.isConnected} offP ${logo.offsetParent ? "yes" : "NULL"}`,
+      `computed w${cs.width} h${cs.height}`,
+      `rect w${Math.round(r.width)} h${Math.round(r.height)} @${Math.round(r.left)},${Math.round(r.top)}`,
+      ...chain.map((c, i) => `${i}: ${c}`),
     ]
   }
   return (
