@@ -10,6 +10,25 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>iNat Territory</title>
+    <script>
+      // Flag standalone (installed PWA) mode on <html> before first paint so the
+      // app-shell height rule in index.css can use 100vh (true full screen) only
+      // there, and 100dvh in a normal browser tab (tracks the address bar).
+      //
+      // We can't rely on CSS @media (display-mode: standalone) alone: iOS
+      // home-screen apps use the legacy apple-mobile-web-app-capable meta with
+      // no web manifest, so they never report a display-mode to CSS.
+      // navigator.standalone is the iOS signal; matchMedia covers other
+      // platforms' manifest-based PWAs.
+      (function () {
+        var standalone =
+          window.navigator.standalone === true ||
+          ["standalone", "fullscreen", "minimal-ui"].some(function (m) {
+            return window.matchMedia("(display-mode: " + m + ")").matches
+          })
+        if (standalone) document.documentElement.setAttribute("data-standalone", "")
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

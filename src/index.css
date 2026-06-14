@@ -158,6 +158,13 @@
   height: 100vh; /* fallback for browsers without dvh (pre-2022) */
   height: 100dvh;
 }
+/* Installed PWA: use the true full-screen height. Two selectors because iOS
+ * home-screen apps (legacy apple-mobile-web-app-capable, no web manifest) don't
+ * match the display-mode query — index.html flags them via [data-standalone]
+ * (navigator.standalone). The media query covers manifest-based PWAs. */
+html[data-standalone] .app-shell {
+  height: 100vh;
+}
 @media (display-mode: standalone),
   (display-mode: fullscreen),
   (display-mode: minimal-ui) {
