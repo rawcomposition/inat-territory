@@ -136,6 +136,30 @@
   html {
     @apply font-sans;
     }
+  /* iOS standalone PWA with a black-translucent status bar measures 100vh/100dvh
+   * as the screen MINUS the status-bar height, leaving a white gap at the bottom.
+   * -webkit-fill-available reports the true full-screen height there, so we set
+   * up a fill chain html -> body -> #root for the app shell to stretch into. */
+  html {
+    height: -webkit-fill-available;
+    }
+  body {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    }
+  #root {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    }
+}
+
+/* App shell height with progressive fallbacks: browsers that don't support
+ * -webkit-fill-available keep 100dvh; iOS standalone PWAs use the fill value,
+ * which (unlike dvh) covers the status-bar region down to the true bottom. */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  height: -webkit-fill-available;
 }
 
 /* Hide the Mapbox zoom controls on small screens to keep the map uncluttered. */
