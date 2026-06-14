@@ -324,7 +324,7 @@ function App() {
   const showEmpty = territories.length === 0 && !shared
 
   return (
-    <div className="app-shell relative w-screen overflow-hidden">
+    <div className="fixed inset-0 overflow-hidden">
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
       <Card className="absolute left-4 top-[calc(env(safe-area-inset-top)_+_1rem)] z-10 flex max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
