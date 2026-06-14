@@ -1,6 +1,6 @@
 {
   "name": "iNat Territory",
-  "short_name": "Territory",
+  "short_name": "iNat Territory",
   "description": "Track your iNaturalist observations across a hex-grid territory.",
   "start_url": "/",
   "scope": "/",
