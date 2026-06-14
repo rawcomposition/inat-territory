@@ -21,9 +21,9 @@ import { SHARED_FALLBACK_NAME, type Territory, type TerritoryStats } from "@/lib
 
 /**
  * Clickable "Error" badge shown on the active card when its observation fetch
- * failed; opens a dialog with the underlying message.
+ * failed; opens a dialog with the underlying message and a retry action.
  */
-function ErrorBadge({ error }: { error: Error }) {
+function ErrorBadge({ error, onRetry }: { error: Error; onRetry?: () => void }) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -51,6 +51,23 @@ function ErrorBadge({ error }: { error: Error }) {
               {error.message}
             </DialogDescription>
           </DialogHeader>
+          <div className="flex justify-end gap-2">
+            {onRetry && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onRetry()
+                  setOpen(false)
+                }}
+              >
+                Try again
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </>
@@ -85,6 +102,8 @@ interface TerritoryCardProps {
   pending?: boolean
   /** Set when this (active) territory's observation fetch failed. */
   error?: Error | null
+  /** Refetch observations for this (active) territory after a failure. */
+  onRetry?: () => void
   onActivate: () => void
   onEdit: () => void
   onShare: () => void
@@ -97,6 +116,7 @@ export function TerritoryCard({
   stats,
   pending = false,
   error,
+  onRetry,
   onActivate,
   onEdit,
   onShare,
@@ -130,7 +150,7 @@ export function TerritoryCard({
         </div>
       </button>
 
-      {error && <ErrorBadge error={error} />}
+      {error && <ErrorBadge error={error} onRetry={onRetry} />}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -170,6 +190,8 @@ interface SharedTerritoryCardProps {
   pending?: boolean
   /** Set when this (active) shared territory's observation fetch failed. */
   error?: Error | null
+  /** Refetch observations for this shared territory after a failure. */
+  onRetry?: () => void
   onActivate: () => void
   onSave: () => void
   onDismiss: () => void
@@ -185,6 +207,7 @@ export function SharedTerritoryCard({
   stats,
   pending = false,
   error,
+  onRetry,
   onActivate,
   onSave,
   onDismiss,
@@ -231,7 +254,7 @@ export function SharedTerritoryCard({
 
       {error && (
         <div className="mt-2">
-          <ErrorBadge error={error} />
+          <ErrorBadge error={error} onRetry={onRetry} />
         </div>
       )}
 

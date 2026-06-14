@@ -45,7 +45,23 @@ export async function fetchObservations(
 
     const res = await fetch(url)
     if (!res.ok) {
-      throw new Error(`iNaturalist API error ${res.status}: ${res.statusText}`)
+      // iNat returns a JSON body with an `error` field (e.g. an unknown
+      // username yields `{"error":"Unknown user_id <name>","status":422}`).
+      // Surface a clear message rather than the bare HTTP status.
+      const apiError = await res
+        .clone()
+        .json()
+        .then((b) => (typeof b?.error === "string" ? (b.error as string) : null))
+        .catch(() => null)
+
+      if (apiError?.startsWith("Unknown user_id")) {
+        throw new Error(`No iNaturalist user found with username "${username}".`)
+      }
+      throw new Error(
+        apiError
+          ? `iNaturalist API error ${res.status}: ${apiError}`
+          : `iNaturalist API error ${res.status}: ${res.statusText}`,
+      )
     }
     const data = await res.json()
 

@@ -12,7 +12,7 @@ const queryClient = new QueryClient({
       // and keep it in memory for a day.
       staleTime: 1000 * 60 * 60, // 1 hour
       gcTime: 1000 * 60 * 60 * 24, // 24 hours
-      retry: 2,
+      retry: false,
       refetchOnWindowFocus: false,
     },
   },

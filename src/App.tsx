@@ -412,6 +412,7 @@ function App() {
                           stats={previewShared ? liveStats : undefined}
                           pending={previewShared && obs.isPending}
                           error={previewShared && obs.isError ? (obs.error as Error) : null}
+                          onRetry={() => obs.refetch()}
                           onActivate={() => setPreviewShared(true)}
                           onSave={openSaveShared}
                           onDismiss={dismissShared}
@@ -427,6 +428,7 @@ function App() {
                             stats={onMap && liveStats ? liveStats : t.stats}
                             pending={onMap && obs.isPending}
                             error={onMap && obs.isError ? (obs.error as Error) : null}
+                            onRetry={() => obs.refetch()}
                             onActivate={() => activateSaved(t.id)}
                             onEdit={() => openEdit(t)}
                             onShare={() => setShareTarget(t)}
