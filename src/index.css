@@ -144,13 +144,26 @@
     }
 }
 
-/* Full-screen app shell. In an iOS standalone PWA only 100vh reports the true
- * full-screen height (behind the status bar, down to the bottom); 100dvh/100%
- * report the shrunk visual viewport and leave a white strip below the status-bar
- * height at the bottom. See the iOS PWA viewport notes:
+/* Full-screen app shell.
+ *
+ * Regular browser: 100dvh tracks the dynamic viewport so content isn't hidden
+ * behind the address/toolbar.
+ *
+ * Installed PWA: there's no browser chrome, and on iOS (black-translucent
+ * status bar) 100dvh reports the SHRUNK visual viewport, leaving a white strip
+ * of the status-bar height at the bottom — only 100vh reports the true
+ * full-screen height there. So switch to 100vh in standalone mode.
  * https://gist.github.com/fozzedout/5e77925381991a9570151550992baf14 */
 .app-shell {
-  height: 100vh;
+  height: 100vh; /* fallback for browsers without dvh (pre-2022) */
+  height: 100dvh;
+}
+@media (display-mode: standalone),
+  (display-mode: fullscreen),
+  (display-mode: minimal-ui) {
+  .app-shell {
+    height: 100vh;
+  }
 }
 
 /* Hide the Mapbox zoom controls on small screens to keep the map uncluttered. */
