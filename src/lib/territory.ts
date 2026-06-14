@@ -283,3 +283,138 @@ export function serializeTerritoryToUrl(t: Territory): string {
   if (t.categories.length) p.set("cat", t.categories.join(","))
   return `?${p.toString()}`
 }
+
+// --- Import / export (JSON file) -----------------------------------------
+
+const EXPORT_VERSION = 1
+const UNITS: Units[] = ["mi", "km"]
+const YEARS: YearFilter[] = ["all", "current", "last"]
+
+/** A territory minus its cached coverage snapshot (derived data, recomputed on
+ * demand after import) and `updatedAt` (unused by import, re-minted on load). */
+export type ExportedTerritory = Omit<Territory, "stats" | "updatedAt">
+
+/** Envelope written to (and accepted from) the export file. */
+export interface TerritoryExportFile {
+  app: "inat-territory"
+  version: number
+  exportedAt: string
+  territories: ExportedTerritory[]
+}
+
+/** Filename for an export, stamped with the local date: inat-territories-YYYY-MM-DD.json */
+export function exportFilename(date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `inat-territories-${y}-${m}-${d}.json`
+}
+
+/** Drop derived/transient fields (stats, updatedAt) so they stay out of the file. */
+function toExported(t: Territory): ExportedTerritory {
+  return {
+    id: t.id,
+    name: t.name,
+    lat: t.lat,
+    lng: t.lng,
+    username: t.username,
+    units: t.units,
+    radius: t.radius,
+    cellSize: t.cellSize,
+    year: t.year,
+    categories: t.categories,
+  }
+}
+
+/** Serialize the user's territories to the export JSON (pretty-printed, no stats). */
+export function serializeTerritoriesExport(territories: Territory[]): string {
+  const file: TerritoryExportFile = {
+    app: "inat-territory",
+    version: EXPORT_VERSION,
+    exportedAt: new Date().toISOString(),
+    territories: territories.map(toExported),
+  }
+  return JSON.stringify(file, null, 2)
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v)
+}
+
+/**
+ * Validate + normalize one record from an import file into a {@link Territory}.
+ * Returns null when a required field (lat/lng/username) is missing or invalid;
+ * absent optional fields fall back to the same defaults the editor would use.
+ * A record's `id` is preserved when present so re-imports overwrite in place,
+ * and minted fresh otherwise.
+ */
+function parseTerritoryRecord(raw: unknown): Territory | null {
+  if (typeof raw !== "object" || raw === null) return null
+  const r = raw as Record<string, unknown>
+
+  if (!isFiniteNumber(r.lat) || r.lat < -90 || r.lat > 90) return null
+  if (!isFiniteNumber(r.lng) || r.lng < -180 || r.lng > 180) return null
+  if (typeof r.username !== "string" || !r.username.trim()) return null
+
+  const units: Units = UNITS.includes(r.units as Units)
+    ? (r.units as Units)
+    : defaultUnits()
+  const radius =
+    isFiniteNumber(r.radius) && r.radius > 0 ? r.radius : DEFAULT_RADIUS[units]
+  const cellSize: CellSize = CELL_SIZES.includes(r.cellSize as CellSize)
+    ? (r.cellSize as CellSize)
+    : DEFAULT_CELL_SIZE
+  const year: YearFilter = YEARS.includes(r.year as YearFilter)
+    ? (r.year as YearFilter)
+    : "all"
+  const categories: Category[] = Array.isArray(r.categories)
+    ? r.categories.filter((c): c is Category =>
+        CATEGORY_VALUES.includes(c as Category),
+      )
+    : []
+
+  return {
+    id: typeof r.id === "string" && r.id ? r.id : newTerritoryId(),
+    name: typeof r.name === "string" ? r.name : "",
+    lat: r.lat,
+    lng: r.lng,
+    username: r.username.trim(),
+    units,
+    radius,
+    cellSize,
+    year,
+    categories,
+    updatedAt: Date.now(),
+  }
+}
+
+/** Outcome of parsing an import file. */
+export interface ImportParseResult {
+  territories: Territory[]
+  /** Records that were present but failed validation. */
+  skipped: number
+}
+
+/**
+ * Parse the JSON text of an export file into valid territories. Accepts either
+ * the {@link TerritoryExportFile} envelope or a bare array of records. Throws if
+ * the text isn't JSON or has no recognizable territories list.
+ */
+export function parseTerritoriesImport(text: string): ImportParseResult {
+  const data: unknown = JSON.parse(text)
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray((data as TerritoryExportFile)?.territories)
+      ? (data as TerritoryExportFile).territories
+      : null
+  if (!list) throw new Error("Unrecognized file format")
+
+  const territories: Territory[] = []
+  let skipped = 0
+  for (const raw of list) {
+    const t = parseTerritoryRecord(raw)
+    if (t) territories.push(t)
+    else skipped++
+  }
+  return { territories, skipped }
+}

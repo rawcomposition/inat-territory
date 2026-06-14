@@ -20,7 +20,6 @@ import {
   type Units,
   type YearFilter,
 } from "@/lib/territory"
-import { convertRadius } from "@/lib/units"
 import { useGeolocation } from "@/lib/useGeolocation"
 
 /** Round a coordinate to the 6 decimal places we store / display. */
@@ -100,8 +99,7 @@ export function TerritoryEditor({
 
   function handleUnitsChange(next: Units) {
     if (next === units) return
-    const r = Number(radius)
-    if (Number.isFinite(r)) setRadius(String(convertRadius(r, units, next)))
+    // Keep the radius number as-is; only the unit label changes (e.g. 5 mi → 5 km).
     setUnits(next)
   }
 

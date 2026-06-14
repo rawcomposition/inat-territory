@@ -28,6 +28,9 @@ interface TerritoryState {
   setActive: (id: string | null) => void
   /** Cache the latest coverage snapshot for a territory (no-op if unchanged). */
   setStats: (id: string, stats: TerritoryStats) => void
+  /** Upsert imported territories by id: same-id entries are overwritten in
+   * place, new ones appended. Selects the first territory if none is active. */
+  importTerritories: (incoming: Territory[]) => void
 }
 
 function statsEqual(a: TerritoryStats | undefined, b: TerritoryStats): boolean {
@@ -79,6 +82,20 @@ export const useTerritoryStore = create<TerritoryState>()(
           ),
         }))
       },
+
+      importTerritories: (incoming) =>
+        set((s) => {
+          // Map keeps insertion order, and re-setting a key updates it in place
+          // — so existing territories stay put while genuinely new ones append.
+          const byId = new Map(s.territories.map((t) => [t.id, t]))
+          for (const t of incoming) byId.set(t.id, t)
+          const territories = [...byId.values()]
+          // If nothing is selected (or activeId dangles), select the first.
+          const activeId = byId.has(s.activeId ?? "")
+            ? s.activeId
+            : (territories[0]?.id ?? null)
+          return { territories, activeId }
+        }),
     }),
     {
       name: "inat-territory-territory",

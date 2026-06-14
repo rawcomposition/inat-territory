@@ -49,8 +49,8 @@ const ICON_LAYERS =
   '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg>'
 
 // A Mapbox control button that toggles between the base map and satellite
-// imagery. Lives in the top-right control stack alongside the zoom buttons; the
-// icon stays the same in both states.
+// imagery. Lives in the bottom-right control stack alongside the geolocate
+// button; the icon stays the same in both states.
 class StyleToggleControl implements mapboxgl.IControl {
   private container!: HTMLDivElement
   private satellite = false
@@ -86,6 +86,53 @@ class StyleToggleControl implements mapboxgl.IControl {
   onRemove() {
     this.container.parentNode?.removeChild(this.container)
   }
+}
+
+// How long a touch must stay (roughly) still before it counts as a long-press,
+// and how far the finger may drift before we treat it as a pan instead.
+const LONG_PRESS_MS = 450
+const LONG_PRESS_MOVE_PX = 10
+
+// Build the little menu shown at a tapped/right-clicked spot: a "view in
+// Google Maps" link and a "copy coordinates" button.
+function buildContextMenu(lngLat: mapboxgl.LngLat): HTMLElement {
+  const lat = lngLat.lat.toFixed(6)
+  const lng = lngLat.lng.toFixed(6)
+
+  const root = document.createElement("div")
+  root.style.display = "flex"
+  root.style.flexDirection = "column"
+  root.style.gap = "6px"
+  root.style.minWidth = "180px"
+
+  const coords = document.createElement("div")
+  coords.textContent = `${lat}, ${lng}`
+  coords.style.fontFamily = "ui-monospace, monospace"
+  coords.style.fontSize = "12px"
+  coords.style.color = "#475569"
+
+  // View: a search query of the coords drops a pin at the spot in Google Maps
+  // (app on mobile, web on desktop) without starting directions.
+  const navLink = document.createElement("a")
+  navLink.textContent = "View in Google Maps"
+  navLink.href = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+  navLink.target = "_blank"
+  navLink.rel = "noopener noreferrer"
+  navLink.style.cssText =
+    "display:block;padding:6px 8px;border-radius:6px;background:#16a34a;color:#fff;font-size:13px;text-align:center;text-decoration:none;"
+
+  const copyBtn = document.createElement("button")
+  copyBtn.type = "button"
+  copyBtn.textContent = "Copy coordinates"
+  copyBtn.style.cssText =
+    "padding:6px 8px;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;font-size:13px;cursor:pointer;"
+  copyBtn.addEventListener("click", () => {
+    void navigator.clipboard?.writeText(`${lat}, ${lng}`)
+    copyBtn.textContent = "Copied!"
+  })
+
+  root.append(coords, navLink, copyBtn)
+  return root
 }
 
 export function MapView({ grid, outline, points, center, radiusKm }: MapViewProps) {
@@ -139,12 +186,14 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
       }),
       "bottom-right",
     )
-    // Toggle between the base map and satellite imagery.
+    // Toggle between the base map and satellite imagery. Bottom-right (below the
+    // geolocate button) so it stays clear of the top-left info panel and isn't
+    // swept up by the mobile rule that hides the top-right zoom controls.
     map.addControl(
       new StyleToggleControl((satellite) => {
         satelliteRef.current = satellite
       }),
-      "top-right",
+      "bottom-right",
     )
 
     // (Re)add our sources and layers from the latest ref data. Runs on the
@@ -286,6 +335,47 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
     map.on("mouseleave", "inat-points", () => {
       map.getCanvas().style.cursor = ""
     })
+
+    // A single reusable popup that acts as the "tap a spot" context menu.
+    const menuPopup = new mapboxgl.Popup({
+      closeButton: false,
+      closeOnClick: true,
+      maxWidth: "none",
+    })
+    function openContextMenu(lngLat: mapboxgl.LngLat) {
+      menuPopup.setLngLat(lngLat).setDOMContent(buildContextMenu(lngLat)).addTo(map)
+    }
+
+    // Desktop: right-click. (Mapbox fires `contextmenu` for long-press too on
+    // some mobile browsers, but it's unreliable — the touch path below covers
+    // mobile explicitly.)
+    map.on("contextmenu", (e) => {
+      openContextMenu(e.lngLat)
+    })
+
+    // Mobile long-press: start a timer on a single-finger touch, cancel it if
+    // the finger drifts (a pan) or lifts early. If it fires, the press was a
+    // stationary hold — show the menu at that point.
+    let pressTimer: ReturnType<typeof setTimeout> | null = null
+    let pressStart: mapboxgl.Point | null = null
+    const clearPress = () => {
+      if (pressTimer) clearTimeout(pressTimer)
+      pressTimer = null
+      pressStart = null
+    }
+    map.on("touchstart", (e) => {
+      if (e.points.length !== 1) return clearPress()
+      pressStart = e.point
+      pressTimer = setTimeout(() => {
+        openContextMenu(e.lngLat)
+        clearPress()
+      }, LONG_PRESS_MS)
+    })
+    map.on("touchmove", (e) => {
+      if (pressStart && e.point.dist(pressStart) > LONG_PRESS_MOVE_PX) clearPress()
+    })
+    map.on("touchend", clearPress)
+    map.on("touchcancel", clearPress)
 
     // Fires on the initial load and after each setStyle. Re-add our layers each
     // time; frame the territory only on the first load.

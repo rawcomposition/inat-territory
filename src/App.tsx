@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
   Copy,
+  Download,
+  MoreVertical,
   Plus,
+  Upload,
   X,
 } from "lucide-react"
 import type { FeatureCollection, Point } from "geojson"
@@ -23,6 +26,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { INAT_MAX_PAGES, MAPBOX_TOKEN } from "@/config"
 import { buildCellsOutline, buildHexGrid, markObservedCells } from "@/lib/hexgrid"
 import { useObservations } from "@/lib/useObservations"
@@ -33,9 +42,12 @@ import {
   centerLngLat,
   defaultDraft,
   draftFrom,
+  exportFilename,
+  parseTerritoriesImport,
   parseTerritoryFromUrl,
   radiusKm,
   resolveYear,
+  serializeTerritoriesExport,
   serializeTerritoryToUrl,
   type Territory,
   type TerritoryDraft,
@@ -71,6 +83,7 @@ function App() {
   const removeTerritory = useTerritoryStore((s) => s.remove)
   const setActive = useTerritoryStore((s) => s.setActive)
   const setStats = useTerritoryStore((s) => s.setStats)
+  const importTerritories = useTerritoryStore((s) => s.importTerritories)
 
   const [view, setView] = useState<"list" | "editor">("list")
   const [editor, setEditor] = useState<EditorState | null>(null)
@@ -79,8 +92,15 @@ function App() {
   // Share dialog (URL + copy) and a short-lived "copied" confirmation.
   const [shareTarget, setShareTarget] = useState<Territory | null>(null)
   const [copied, setCopied] = useState(false)
-  // Territory pending delete confirmation.
+  // Territory pending delete confirmation. The Delete button is focused on open
+  // (overriding Radix's default first-focusable) so Enter confirms.
   const [deleteTarget, setDeleteTarget] = useState<Territory | null>(null)
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
+  // Result/error notice shown after an import attempt.
+  const [importNotice, setImportNotice] = useState<{
+    title: string
+    message: string
+  } | null>(null)
 
   // The territory rendered on the map: the shared preview when active, else the
   // user's active saved territory (null → the map shows the whole world).
@@ -232,6 +252,56 @@ function App() {
     setActive(id)
   }
 
+  // Download the saved territories as a JSON file (cached stats omitted).
+  function handleExport() {
+    const blob = new Blob([serializeTerritoriesExport(territories)], {
+      type: "application/json",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = exportFilename()
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // Pick a JSON file and upsert its territories (overwrite by id, add new ones).
+  function handleImport() {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = "application/json,.json"
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      let result: ReturnType<typeof parseTerritoriesImport>
+      try {
+        result = parseTerritoriesImport(await file.text())
+      } catch {
+        setImportNotice({
+          title: "Import failed",
+          message: "That file isn’t a valid territories export.",
+        })
+        return
+      }
+      const { territories: incoming, skipped } = result
+      if (incoming.length === 0) {
+        setImportNotice({
+          title: "Nothing to import",
+          message: "No valid territories were found in that file.",
+        })
+        return
+      }
+      importTerritories(incoming)
+      if (skipped > 0) {
+        setImportNotice({
+          title: "Import complete",
+          message: `Imported ${incoming.length} ${incoming.length === 1 ? "territory" : "territories"}. Skipped ${skipped} invalid ${skipped === 1 ? "entry" : "entries"}.`,
+        })
+      }
+    }
+    input.click()
+  }
+
   // Shareable link for the share dialog's target territory.
   const shareUrl = shareTarget
     ? window.location.origin +
@@ -331,7 +401,7 @@ function App() {
                 )}
 
                 {showEmpty ? (
-                  <EmptyState onNew={openCreate} />
+                  <EmptyState onNew={openCreate} onImport={handleImport} />
                 ) : (
                   <>
                     <div className="space-y-2.5">
@@ -366,13 +436,39 @@ function App() {
 
                     {!obscuredNoticeDismissed && mapTerritory && <ObscuredNotice />}
 
-                    <Button
-                      className="w-full bg-inat text-white hover:bg-inat/90"
-                      onClick={openCreate}
-                    >
-                      <Plus />
-                      New territory
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        className="flex-1 bg-inat text-white hover:bg-inat/90"
+                        onClick={openCreate}
+                      >
+                        <Plus />
+                        New territory
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            aria-label="Import or export territories"
+                          >
+                            <MoreVertical />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onSelect={handleImport}>
+                            <Upload />
+                            Import
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={handleExport}
+                            disabled={territories.length === 0}
+                          >
+                            <Download />
+                            Export
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </>
                 )}
               </div>
@@ -411,7 +507,12 @@ function App() {
       </Dialog>
 
       <Dialog open={deleteTarget != null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <DialogContent>
+        <DialogContent
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            deleteButtonRef.current?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Delete territory?</DialogTitle>
             <DialogDescription>
@@ -422,8 +523,25 @@ function App() {
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
+            <Button ref={deleteButtonRef} variant="destructive" onClick={confirmDelete}>
               Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={importNotice != null}
+        onOpenChange={(o) => !o && setImportNotice(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{importNotice?.title}</DialogTitle>
+            <DialogDescription>{importNotice?.message}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setImportNotice(null)}>
+              Close
             </Button>
           </div>
         </DialogContent>
@@ -442,7 +560,13 @@ function obsState(obs: ReturnType<typeof useObservations>): ObsState {
   return "idle"
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
+function EmptyState({
+  onNew,
+  onImport,
+}: {
+  onNew: () => void
+  onImport: () => void
+}) {
   return (
     <div className="px-2 py-8 text-center">
       <span
@@ -460,6 +584,10 @@ function EmptyState({ onNew }: { onNew: () => void }) {
       <Button className="mt-5 w-full bg-inat text-white hover:bg-inat/90" onClick={onNew}>
         <Plus />
         New territory
+      </Button>
+      <Button variant="ghost" size="sm" className="mt-2" onClick={onImport}>
+        <Upload />
+        Import territories
       </Button>
     </div>
   )
