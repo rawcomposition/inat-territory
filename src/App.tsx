@@ -324,7 +324,7 @@ function App() {
   const showEmpty = territories.length === 0 && !shared
 
   return (
-    <div className="fixed top-0 right-0 left-0 bottom-[calc(-1*env(safe-area-inset-top))] overflow-hidden">
+    <div className="app-shell relative w-full overflow-hidden">
       <SizeDebug />
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 

@@ -141,6 +141,21 @@
   html {
     @apply font-sans;
     }
+  /* iOS standalone PWA + black-translucent status bar shrinks the layout
+   * viewport by the top safe-area inset but anchors it at the top, leaving a
+   * blank strip of that height at the bottom. Growing the document by the same
+   * inset lets normal-flow content paint into that (physically visible but
+   * CSS-offscreen) strip. A position:fixed element can't — it's clipped to the
+   * short viewport. See https://itnext.io/make-your-pwas-look-handsome-on-ios-fd8fdfcd5777 */
+  html {
+    min-height: calc(100% + env(safe-area-inset-top));
+    }
+}
+
+/* Full-screen app shell. env(safe-area-inset-top) is 0 outside an iOS
+ * black-translucent PWA, so this is just 100dvh everywhere else. */
+.app-shell {
+  height: calc(100dvh + env(safe-area-inset-top));
 }
 
 /* Hide the Mapbox zoom controls on small screens to keep the map uncluttered. */
