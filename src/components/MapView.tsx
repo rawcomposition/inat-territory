@@ -445,8 +445,17 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
       loadedRef.current = true
     })
 
+    // Mapbox sizes its canvas once, from the container's measured height at
+    // init. In an iOS standalone PWA the safe-area/layout settles a beat after
+    // first paint, so the container grows but the canvas keeps its original,
+    // shorter size — leaving a white gap below the map. Watch the container and
+    // resize the canvas to match whenever its box changes.
+    const resizeObserver = new ResizeObserver(() => map.resize())
+    resizeObserver.observe(containerRef.current)
+
     return () => {
       loadedRef.current = false
+      resizeObserver.disconnect()
       map.remove()
       mapRef.current = null
     }
