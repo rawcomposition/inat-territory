@@ -48,6 +48,22 @@ export async function fetchObservations(
       throw new Error(`iNaturalist API error ${res.status}: ${res.statusText}`)
     }
     const data = await res.json()
+
+    // Fail fast: page 1 reports the full match count. If the user has more
+    // observations here than we can page through, throw before returning a
+    // misleadingly partial set — the caller surfaces this as an error.
+    if (page === 1) {
+      const total: number = data.total_results ?? 0
+      const cap = maxPages * perPage
+      if (total > cap) {
+        throw new Error(
+          `This area has ${total.toLocaleString()} matching observations, ` +
+            `more than the ${cap.toLocaleString()} we can load at once. ` +
+            `Try a smaller radius or a year filter.`,
+        )
+      }
+    }
+
     const results: any[] = data.results ?? []
 
     for (const r of results) {

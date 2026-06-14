@@ -411,6 +411,7 @@ function App() {
                           active={previewShared}
                           stats={previewShared ? liveStats : undefined}
                           pending={previewShared && obs.isPending}
+                          error={previewShared && obs.isError ? (obs.error as Error) : null}
                           onActivate={() => setPreviewShared(true)}
                           onSave={openSaveShared}
                           onDismiss={dismissShared}
@@ -425,6 +426,7 @@ function App() {
                             active={onMap}
                             stats={onMap && liveStats ? liveStats : t.stats}
                             pending={onMap && obs.isPending}
+                            error={onMap && obs.isError ? (obs.error as Error) : null}
                             onActivate={() => activateSaved(t.id)}
                             onEdit={() => openEdit(t)}
                             onShare={() => setShareTarget(t)}
@@ -623,7 +625,8 @@ function HexMark() {
 
 function StatusBadge({ state }: { state: ObsState }) {
   if (state === "loading") return <Badge variant="secondary">Loading…</Badge>
-  if (state === "error") return <Badge variant="destructive">Error</Badge>
+  // The "error" state is surfaced per-card (clickable, with details) on the
+  // active TerritoryCard, so the header doesn't repeat it.
   return null
 }
 

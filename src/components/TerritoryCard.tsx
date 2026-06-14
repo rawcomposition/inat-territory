@@ -1,6 +1,15 @@
+import { useState } from "react"
 import { MoreVertical, Pencil, Share2, Trash2, X } from "lucide-react"
 import { MiniRing } from "@/components/RingGauge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,6 +18,44 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SHARED_FALLBACK_NAME, type Territory, type TerritoryStats } from "@/lib/territory"
+
+/**
+ * Clickable "Error" badge shown on the active card when its observation fetch
+ * failed; opens a dialog with the underlying message.
+ */
+function ErrorBadge({ error }: { error: Error }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <Badge
+        asChild
+        variant="destructive"
+        className="cursor-pointer"
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen(true)
+          }}
+          aria-label="Show fetch error details"
+        >
+          Error
+        </button>
+      </Badge>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Couldn’t load observations</DialogTitle>
+            <DialogDescription className="text-pretty">
+              {error.message}
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
 
 /** The "43/250 cells · 592 obs" line under a territory's name. */
 function MetaLine({ stats }: { stats: TerritoryStats | undefined }) {
@@ -36,6 +83,8 @@ interface TerritoryCardProps {
   stats: TerritoryStats | undefined
   /** Observations are still loading for this (active) territory. */
   pending?: boolean
+  /** Set when this (active) territory's observation fetch failed. */
+  error?: Error | null
   onActivate: () => void
   onEdit: () => void
   onShare: () => void
@@ -47,6 +96,7 @@ export function TerritoryCard({
   active,
   stats,
   pending = false,
+  error,
   onActivate,
   onEdit,
   onShare,
@@ -79,6 +129,8 @@ export function TerritoryCard({
           <MetaLine stats={stats} />
         </div>
       </button>
+
+      {error && <ErrorBadge error={error} />}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -116,6 +168,8 @@ interface SharedTerritoryCardProps {
   active: boolean
   stats: TerritoryStats | undefined
   pending?: boolean
+  /** Set when this (active) shared territory's observation fetch failed. */
+  error?: Error | null
   onActivate: () => void
   onSave: () => void
   onDismiss: () => void
@@ -130,6 +184,7 @@ export function SharedTerritoryCard({
   active,
   stats,
   pending = false,
+  error,
   onActivate,
   onSave,
   onDismiss,
@@ -173,6 +228,12 @@ export function SharedTerritoryCard({
           <MetaLine stats={stats} />
         </div>
       </button>
+
+      {error && (
+        <div className="mt-2">
+          <ErrorBadge error={error} />
+        </div>
+      )}
 
       <Button
         size="sm"
