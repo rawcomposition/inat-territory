@@ -200,6 +200,7 @@ export function TerritoryEditor({
             step="0.1"
             value={radius}
             onChange={(e) => setRadius(e.target.value)}
+            onFocus={(e) => e.target.select()}
             className="font-mono"
           />
         </div>
