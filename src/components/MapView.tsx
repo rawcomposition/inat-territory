@@ -19,6 +19,7 @@ import {
   SHOW_RADIUS,
 } from "@/config"
 import { buildBoundary, type HexCellProps } from "@/lib/hexgrid"
+import { useTouchDevice } from "@/lib/useTouchDevice"
 
 const GRID_SOURCE = "hex-grid"
 const FRAME_SOURCE = "hex-frame"
@@ -29,14 +30,6 @@ const BOUNDARY_SOURCE = "area-boundary"
 // dots — the visible dots are only ~3px, far too small to hit reliably,
 // especially on touch.
 const POINTS_HIT_LAYER = "inat-points-hit"
-
-// Radius (px) of that hit target. Coarse pointers (touch) get a fingertip-sized
-// area; a mouse needs less slack.
-const POINTS_HIT_RADIUS =
-  typeof window !== "undefined" &&
-  window.matchMedia?.("(pointer: coarse)").matches
-    ? 18
-    : 10
 
 // Framing used before there's any territory to show — centered on Central
 // America, [lng, lat].
@@ -152,6 +145,7 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const loadedRef = useRef(false)
+  const isTouchDevice = useTouchDevice()
 
   // Keep the latest data in refs so the (mount-only) load handler can seed the
   // sources with whatever is current when the style finishes loading.
@@ -309,7 +303,8 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
         type: "circle",
         source: POINTS_SOURCE,
         paint: {
-          "circle-radius": POINTS_HIT_RADIUS,
+          // Fingertip-sized on touch; a mouse needs less slack.
+          "circle-radius": isTouchDevice ? 18 : 10,
           "circle-color": "#000000",
           "circle-opacity": 0,
         },
@@ -503,5 +498,16 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
     )
   }
 
-  return <div ref={containerRef} className="h-full w-full" />
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+      {isTouchDevice && (
+        <div
+          aria-hidden
+          className="pointer-events-auto absolute bottom-0 left-0 right-12 h-4"
+          style={{ touchAction: "none" }}
+        />
+      )}
+    </div>
+  )
 }

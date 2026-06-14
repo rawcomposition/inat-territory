@@ -148,6 +148,7 @@ export function TerritoryEditor({
         <Label htmlFor="te-name">Territory name</Label>
         <Input
           id="te-name"
+          autoFocus={mode === "create"}
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
