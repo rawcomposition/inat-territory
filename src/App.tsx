@@ -325,6 +325,7 @@ function App() {
 
   return (
     <div className="app-shell relative w-full overflow-hidden">
+      <LogoDebug />
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
       <Card className="absolute left-4 top-[calc(env(safe-area-inset-top)_+_1rem)] z-10 flex max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
@@ -634,6 +635,45 @@ function StatusBadge({ state }: { state: ObsState }) {
   // The "error" state is surfaced per-card (clickable, with details) on the
   // active TerritoryCard, so the header doesn't repeat it.
   return null
+}
+
+// TEMP: report exactly what's happening to the Mapbox logo in the PWA — is it
+// display:none, off-screen, or covered by another element? Remove once solved.
+function LogoDebug() {
+  const [, force] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => force((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const logo = document.querySelector<HTMLElement>(".mapboxgl-ctrl-logo")
+  let lines: string[]
+  if (!logo) {
+    lines = ["logo: NOT IN DOM"]
+  } else {
+    const cs = getComputedStyle(logo)
+    const r = logo.getBoundingClientRect()
+    // What element actually sits at the logo's center? If it isn't the logo,
+    // something is covering it.
+    const cx = Math.round(r.left + r.width / 2)
+    const cy = Math.round(r.top + r.height / 2)
+    const hit = document.elementFromPoint(cx, cy)
+    const hitDesc = hit
+      ? `${hit.tagName.toLowerCase()}.${(hit.className || "").toString().split(" ")[0]}`
+      : "none"
+    lines = [
+      `disp ${cs.display} vis ${cs.visibility} op ${cs.opacity}`,
+      `rect x${Math.round(r.left)} y${Math.round(r.top)} w${Math.round(r.width)} h${Math.round(r.height)}`,
+      `winH ${window.innerHeight}`,
+      `at center: ${hitDesc}`,
+    ]
+  }
+  return (
+    <div className="pointer-events-none absolute top-1 left-1 z-[9999] rounded bg-black/85 px-1.5 py-1 font-mono text-[10px] leading-tight text-white">
+      {lines.map((l, i) => (
+        <div key={i}>{l}</div>
+      ))}
+    </div>
+  )
 }
 
 export default App
