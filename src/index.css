@@ -51,6 +51,11 @@
 }
 
 :root {
+    /* TEMP: expose the iOS safe-area insets as plain custom properties so JS can
+     * read their resolved px values (env() can't be read via getComputedStyle).
+     * Used by the SizeDebug overlay; remove with it. */
+    --saf-t: env(safe-area-inset-top);
+    --saf-b: env(safe-area-inset-bottom);
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
