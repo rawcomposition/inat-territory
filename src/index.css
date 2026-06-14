@@ -51,11 +51,6 @@
 }
 
 :root {
-    /* TEMP: expose the iOS safe-area insets as plain custom properties so JS can
-     * read their resolved px values (env() can't be read via getComputedStyle).
-     * Used by the SizeDebug overlay; remove with it. */
-    --saf-t: env(safe-area-inset-top);
-    --saf-b: env(safe-area-inset-bottom);
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);
@@ -141,21 +136,21 @@
   html {
     @apply font-sans;
     }
-  /* iOS standalone PWA + black-translucent status bar shrinks the layout
-   * viewport by the top safe-area inset but anchors it at the top, leaving a
-   * blank strip of that height at the bottom. Growing the document by the same
-   * inset lets normal-flow content paint into that (physically visible but
-   * CSS-offscreen) strip. A position:fixed element can't — it's clipped to the
-   * short viewport. See https://itnext.io/make-your-pwas-look-handsome-on-ios-fd8fdfcd5777 */
-  html {
-    min-height: calc(100% + env(safe-area-inset-top));
+  /* Lock the page to the viewport — no document scroll/rubber-band; the map
+   * owns all panning. */
+  html,
+  body {
+    overflow: hidden;
     }
 }
 
-/* Full-screen app shell. env(safe-area-inset-top) is 0 outside an iOS
- * black-translucent PWA, so this is just 100dvh everywhere else. */
+/* Full-screen app shell. In an iOS standalone PWA only 100vh reports the true
+ * full-screen height (behind the status bar, down to the bottom); 100dvh/100%
+ * report the shrunk visual viewport and leave a white strip below the status-bar
+ * height at the bottom. See the iOS PWA viewport notes:
+ * https://gist.github.com/fozzedout/5e77925381991a9570151550992baf14 */
 .app-shell {
-  height: calc(100dvh + env(safe-area-inset-top));
+  height: 100vh;
 }
 
 /* Hide the Mapbox zoom controls on small screens to keep the map uncluttered. */

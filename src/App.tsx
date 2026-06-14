@@ -325,7 +325,6 @@ function App() {
 
   return (
     <div className="app-shell relative w-full overflow-hidden">
-      <SizeDebug />
       <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
 
       <Card className="absolute left-4 top-[calc(env(safe-area-inset-top)_+_1rem)] z-10 flex max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
@@ -635,39 +634,6 @@ function StatusBadge({ state }: { state: ObsState }) {
   // The "error" state is surfaced per-card (clickable, with details) on the
   // active TerritoryCard, so the header doesn't repeat it.
   return null
-}
-
-// TEMP: on-screen readout of the various height/inset measurements so we can
-// see, on the actual installed PWA, exactly which value is short and by how
-// much. Remove once the bottom-gap issue is pinned down.
-function SizeDebug() {
-  const [, force] = useState(0)
-  useEffect(() => {
-    const onChange = () => force((n) => n + 1)
-    window.addEventListener("resize", onChange)
-    window.visualViewport?.addEventListener("resize", onChange)
-    const t = setTimeout(onChange, 500)
-    return () => {
-      window.removeEventListener("resize", onChange)
-      window.visualViewport?.removeEventListener("resize", onChange)
-      clearTimeout(t)
-    }
-  }, [])
-  const cs = getComputedStyle(document.documentElement)
-  const inset = (side: string) =>
-    cs.getPropertyValue(`--saf-${side}`).trim() || "?"
-  const shell = document.querySelector("#root > div")?.getBoundingClientRect().height
-  const canvas = document.querySelector("canvas")?.getBoundingClientRect().height
-  return (
-    <div className="pointer-events-none absolute right-1 bottom-1 z-50 rounded bg-black/80 px-1.5 py-1 font-mono text-[10px] leading-tight text-white">
-      <div>inner {Math.round(window.innerHeight)}</div>
-      <div>screen {Math.round(window.screen.height)}</div>
-      <div>visual {Math.round(window.visualViewport?.height ?? 0)}</div>
-      <div>shell {shell != null ? Math.round(shell) : "?"}</div>
-      <div>canvas {canvas != null ? Math.round(canvas) : "?"}</div>
-      <div>saf t{inset("t")} b{inset("b")}</div>
-    </div>
-  )
 }
 
 export default App
