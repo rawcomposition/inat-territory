@@ -621,7 +621,10 @@ function HexMark() {
     <span
       aria-hidden
       className="size-3.5 shrink-0 bg-inat"
-      style={{ clipPath: "polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)" }}
+      // Regular hexagon: the flat top/bottom edges sit at ~6.7%/93.3% (R·sin60°),
+      // not 0%/100% — otherwise the hexagon stretches to fill the square box and
+      // looks vertically squished, unlike the favicon it mirrors.
+      style={{ clipPath: "polygon(25% 6.7%, 75% 6.7%, 100% 50%, 75% 93.3%, 25% 93.3%, 0% 50%)" }}
     />
   )
 }
