@@ -25,6 +25,19 @@ const FRAME_SOURCE = "hex-frame"
 const POINTS_SOURCE = "inat-points"
 const BOUNDARY_SOURCE = "area-boundary"
 
+// Id of the invisible, oversized layer that catches taps on the observation
+// dots — the visible dots are only ~3px, far too small to hit reliably,
+// especially on touch.
+const POINTS_HIT_LAYER = "inat-points-hit"
+
+// Radius (px) of that hit target. Coarse pointers (touch) get a fingertip-sized
+// area; a mouse needs less slack.
+const POINTS_HIT_RADIUS =
+  typeof window !== "undefined" &&
+  window.matchMedia?.("(pointer: coarse)").matches
+    ? 18
+    : 10
+
 // Framing used before there's any territory to show — centered on Central
 // America, [lng, lat].
 const WORLD_CENTER: [number, number] = [-85, 12]
@@ -287,6 +300,20 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
           "circle-stroke-width": 1,
         },
       })
+      // Invisible, finger-sized hit target on top of the dots. Click/hover
+      // handlers are bound to this layer (see below) so the tappable area is
+      // much larger than the 3px dot — opacity 0 doesn't stop Mapbox from
+      // querying the feature on tap.
+      map.addLayer({
+        id: POINTS_HIT_LAYER,
+        type: "circle",
+        source: POINTS_SOURCE,
+        paint: {
+          "circle-radius": POINTS_HIT_RADIUS,
+          "circle-color": "#000000",
+          "circle-opacity": 0,
+        },
+      })
 
       // Boundary of the area of interest (circle or hexagon). Always added as a
       // source — empty until there's a territory — so the center/radius effect
@@ -319,8 +346,23 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
     // Open the observation on iNaturalist when its point is clicked, and show a
     // pointer cursor while hovering one. Bound once — these delegate by layer id
     // and keep working when the layer is re-added on a style switch.
-    map.on("click", "inat-points", (e) => {
-      const id = e.features?.[0]?.properties?.id
+    map.on("click", POINTS_HIT_LAYER, (e) => {
+      // The enlarged hit circles overlap in dense clusters, so several dots can
+      // sit under one tap. Mapbox returns them in render order, not by distance —
+      // pick the one whose projected center is nearest the tap point.
+      const features = e.features ?? []
+      let nearest: (typeof features)[number] | undefined
+      let nearestDist = Infinity
+      for (const f of features) {
+        if (f.geometry.type !== "Point") continue
+        const [lng, lat] = f.geometry.coordinates
+        const dist = map.project([lng, lat]).dist(e.point)
+        if (dist < nearestDist) {
+          nearestDist = dist
+          nearest = f
+        }
+      }
+      const id = nearest?.properties?.id
       if (id != null) {
         window.open(
           `https://www.inaturalist.org/observations/${id}`,
@@ -329,10 +371,10 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
         )
       }
     })
-    map.on("mouseenter", "inat-points", () => {
+    map.on("mouseenter", POINTS_HIT_LAYER, () => {
       map.getCanvas().style.cursor = "pointer"
     })
-    map.on("mouseleave", "inat-points", () => {
+    map.on("mouseleave", POINTS_HIT_LAYER, () => {
       map.getCanvas().style.cursor = ""
     })
 
