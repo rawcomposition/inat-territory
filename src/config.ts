@@ -64,13 +64,16 @@ export const RADIUS_STYLE = {
 // so the macro shape mirrors the unit cells — a flat-topped hexagon-of-hexagons.
 //
 // Cell-size categories offered in the editor → H3 resolution. H3 resolutions
-// are discrete (~2.6x apart), so these are the nearest stops to the old
-// 0.5 / 1.0 / 2.0 km edges — see the avg edge length in each comment.
-//   res 8 ≈ 0.53 km edge · res 7 ≈ 1.41 km edge · res 6 ≈ 3.72 km edge
+// are discrete (~2.6x apart), so each step here moves one H3 resolution.
+//   res 10 ≈ 0.07 km edge · res 9 ≈ 0.20 km edge · res 8 ≈ 0.53 km edge
+//   res 7 ≈ 1.41 km edge · res 6 ≈ 3.72 km edge · res 5 ≈ 9.85 km edge
 export const CELL_SIZE_RES: Record<CellSize, number> = {
+  xxsmall: 10,
+  xsmall: 9,
   small: 8,
   medium: 7,
   large: 6,
+  xlarge: 5,
 };
 
 // Cell size used for a fresh territory.

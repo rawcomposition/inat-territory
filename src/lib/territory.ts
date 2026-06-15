@@ -7,7 +7,7 @@ import {
 import { toKm } from "./units"
 
 export type Units = "mi" | "km"
-export type CellSize = "small" | "medium" | "large"
+export type CellSize = "xxsmall" | "xsmall" | "small" | "medium" | "large" | "xlarge"
 
 /** Which observation years to include. Stored as a choice (not a concrete year)
  * so "current"/"last" stay correct as time passes; resolved via {@link resolveYear}. */
@@ -100,7 +100,7 @@ export function newTerritoryId(): string {
   return crypto.randomUUID()
 }
 
-const CELL_SIZES: CellSize[] = ["small", "medium", "large"]
+const CELL_SIZES: CellSize[] = ["xxsmall", "xsmall", "small", "medium", "large", "xlarge"]
 
 /**
  * A not-yet-complete territory used to seed the editor for a brand-new entry.

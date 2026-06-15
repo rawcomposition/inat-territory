@@ -37,7 +37,16 @@ interface TerritoryEditorProps {
   onDelete?: () => void
 }
 
-const CELL_SIZES: CellSize[] = ["small", "medium", "large"]
+const CELL_SIZES: CellSize[] = ["xxsmall", "xsmall", "small", "medium", "large", "xlarge"]
+
+const CELL_SIZE_LABELS: Record<CellSize, string> = {
+  xxsmall: "XXS",
+  xsmall: "XS",
+  small: "S",
+  medium: "M",
+  large: "L",
+  xlarge: "XL",
+}
 
 // The default "on" state (bg-muted) is too subtle to read as selected against
 // the panel; use the primary color so the active segment is obvious.
@@ -261,9 +270,9 @@ export function TerritoryEditor({
                   <ToggleGroupItem
                     key={size}
                     value={size}
-                    className={`flex-1 capitalize ${SELECTED}`}
+                    className={`flex-1 ${SELECTED}`}
                   >
-                    {size}
+                    {CELL_SIZE_LABELS[size]}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
