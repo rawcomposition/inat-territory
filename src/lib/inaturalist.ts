@@ -45,6 +45,8 @@ export async function fetchObservations(
     url.searchParams.set("lng", String(lng))
     url.searchParams.set("radius", String(radiusKm)) // km
     url.searchParams.set("geo", "true")
+    url.searchParams.set("geoprivacy", "open")
+    url.searchParams.set("taxon_geoprivacy", "open")
     url.searchParams.set("per_page", String(perPage))
     url.searchParams.set("page", String(page))
     url.searchParams.set("order_by", "observed_on")
