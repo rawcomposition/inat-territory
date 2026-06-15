@@ -46,6 +46,20 @@ export const MAX_RADIUS: Record<Units, number> = { mi: 100, km: 100 };
 // Whether to draw the outline marking the area boundary on the map.
 export const SHOW_RADIUS = false;
 
+// Style of the official place boundary outline, drawn for place territories
+// (always shown — independent of SHOW_RADIUS). The satellite variant lightens
+// the color so it stays legible over imagery.
+export const PLACE_BOUNDARY_STYLE = {
+  color: "#2563eb",
+  width: 2,
+  opacity: 0.9,
+};
+export const PLACE_BOUNDARY_STYLE_SATELLITE = {
+  color: "#60a5fa",
+  width: 2.5,
+  opacity: 1,
+};
+
 // Style of the radius circle outline (used only when SHOW_RADIUS is true).
 // `dash` is a Mapbox dash pattern, e.g. [2, 2]; use [] for a solid line.
 export const RADIUS_STYLE = {
@@ -129,4 +143,4 @@ export const HEX_SATELLITE_CASING = {
 
 // Max pages of observations to fetch (200 per page). Caps the prototype's
 // network usage for very prolific users.
-export const INAT_MAX_PAGES = 10;
+export const INAT_MAX_PAGES = 20;

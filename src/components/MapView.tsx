@@ -2,7 +2,14 @@ import { useEffect, useRef } from "react"
 import mapboxgl from "mapbox-gl"
 import "mapbox-gl/dist/mapbox-gl.css"
 import * as turf from "@turf/turf"
-import type { FeatureCollection, MultiLineString, Point, Polygon } from "geojson"
+import type {
+  Feature,
+  FeatureCollection,
+  MultiLineString,
+  MultiPolygon,
+  Point,
+  Polygon,
+} from "geojson"
 
 import {
   AREA_HEX_ROTATION_DEG,
@@ -14,6 +21,8 @@ import {
   HEX_SATELLITE_CASING,
   MAP_STYLE,
   MAPBOX_TOKEN,
+  PLACE_BOUNDARY_STYLE,
+  PLACE_BOUNDARY_STYLE_SATELLITE,
   RADIUS_STYLE,
   SATELLITE_STYLE,
   SHOW_RADIUS,
@@ -25,6 +34,7 @@ const GRID_SOURCE = "hex-grid"
 const FRAME_SOURCE = "hex-frame"
 const POINTS_SOURCE = "inat-points"
 const BOUNDARY_SOURCE = "area-boundary"
+const PLACE_SOURCE = "place-boundary"
 
 // Id of the invisible, oversized layer that catches taps on the observation
 // dots — the visible dots are only ~3px, far too small to hit reliably,
@@ -38,6 +48,13 @@ const WORLD_ZOOM = 1.2
 
 const EMPTY_FC: FeatureCollection = { type: "FeatureCollection", features: [] }
 
+/** Wrap a place geometry as a GeoJSON Feature for a Mapbox source. */
+function placeFeature(
+  geometry: Polygon | MultiPolygon,
+): Feature<Polygon | MultiPolygon> {
+  return { type: "Feature", geometry, properties: {} }
+}
+
 interface MapViewProps {
   grid: FeatureCollection<Polygon, HexCellProps>
   /** Outer contour of the whole grid, drawn as a frame. */
@@ -45,8 +62,16 @@ interface MapViewProps {
   points: FeatureCollection<Point>
   /** Area center, [lng, lat]. Null when there's no active territory. */
   center: [number, number] | null
-  /** Area radius / circumradius in kilometers. Null when there's no territory. */
+  /** Area radius / circumradius in kilometers. Null for a place territory (or
+   * when there's no territory) — the circle/hexagon boundary isn't drawn then. */
   radiusKm: number | null
+  /** Official boundary polygon for a place territory; null for radius
+   * territories. Used to frame the map, and drawn as an outline when
+   * {@link showPlaceBoundary} is true. */
+  placeBoundary: Polygon | MultiPolygon | null
+  /** Whether to draw the place boundary outline. The geometry still frames the
+   * map when false — only the line is hidden. */
+  showPlaceBoundary: boolean
 }
 
 // Inline "layers" icon (lucide) — a stacked-sheets glyph that reads as "map
@@ -141,7 +166,15 @@ function buildContextMenu(lngLat: mapboxgl.LngLat): HTMLElement {
   return root
 }
 
-export function MapView({ grid, outline, points, center, radiusKm }: MapViewProps) {
+export function MapView({
+  grid,
+  outline,
+  points,
+  center,
+  radiusKm,
+  placeBoundary,
+  showPlaceBoundary,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
   const loadedRef = useRef(false)
@@ -154,11 +187,30 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
   const pointsRef = useRef(points)
   const centerRef = useRef(center)
   const radiusKmRef = useRef(radiusKm)
+  const placeBoundaryRef = useRef(placeBoundary)
+  const showPlaceBoundaryRef = useRef(showPlaceBoundary)
   gridRef.current = grid
   outlineRef.current = outline
   pointsRef.current = points
   centerRef.current = center
   radiusKmRef.current = radiusKm
+  placeBoundaryRef.current = placeBoundary
+  showPlaceBoundaryRef.current = showPlaceBoundary
+
+  // The feature the map frames on: the actual cell hull once built, else the
+  // place boundary (place territory) or the radius circle/hexagon (radius
+  // territory) before any cells exist. Null when there's nothing to frame.
+  function frameFeature():
+    | FeatureCollection<MultiLineString>
+    | Feature<Polygon | MultiPolygon>
+    | null {
+    if (outlineRef.current.features.length) return outlineRef.current
+    if (placeBoundaryRef.current) return placeFeature(placeBoundaryRef.current)
+    const c = centerRef.current
+    const r = radiusKmRef.current
+    if (c && r != null) return buildBoundary(c, r, AREA_SHAPE, AREA_HEX_ROTATION_DEG)
+    return null
+  }
   // Whether satellite imagery is currently active — read by addLayers to pick
   // border colors that stay legible over the imagery.
   const satelliteRef = useRef(false)
@@ -336,6 +388,30 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
           },
         })
       }
+
+      // Official place boundary (place territories only) — always drawn so the
+      // territory's defining shape is visible. Empty until a place is active.
+      const placeStyle = satelliteRef.current
+        ? PLACE_BOUNDARY_STYLE_SATELLITE
+        : PLACE_BOUNDARY_STYLE
+      map.addSource(PLACE_SOURCE, {
+        type: "geojson",
+        data:
+          placeBoundaryRef.current && showPlaceBoundaryRef.current
+            ? placeFeature(placeBoundaryRef.current)
+            : EMPTY_FC,
+      })
+      map.addLayer({
+        id: "place-boundary",
+        type: "line",
+        source: PLACE_SOURCE,
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": placeStyle.color,
+          "line-width": placeStyle.width,
+          "line-opacity": placeStyle.opacity,
+        },
+      })
     }
 
     // Open the observation on iNaturalist when its point is clicked, and show a
@@ -423,14 +499,11 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
       addLayers()
       if (loadedRef.current) return
 
-      // Frame the area, if there is one. Fit to the actual cells (the grid-disk
-      // can reach a little past the nominal radius), falling back to the
-      // boundary before any cells exist.
-      const c = centerRef.current
-      const r = radiusKmRef.current
-      if (c && r != null) {
-        const boundary = buildBoundary(c, r, AREA_SHAPE, AREA_HEX_ROTATION_DEG)
-        const frame = outlineRef.current.features.length ? outlineRef.current : boundary
+      // Frame the area, if there is one. Fits the actual cell hull when built
+      // (it can reach a little past the nominal radius), else the place/radius
+      // boundary.
+      const frame = frameFeature()
+      if (frame) {
         map.fitBounds(turf.bbox(frame) as [number, number, number, number], {
           padding: 40,
           duration: 0,
@@ -470,25 +543,40 @@ export function MapView({ grid, outline, points, center, radiusKm }: MapViewProp
     src?.setData(points)
   }, [points])
 
-  // Rebuild the boundary and reframe the map when the territory's center or
-  // radius changes (e.g. after the user saves an edit). `center`/`radiusKm` are
-  // memoized upstream, so this only fires on a real territory change.
+  // Rebuild both boundary sources and reframe the map when the active territory
+  // changes (its center/radius, place boundary, or computed cell hull). These
+  // are all memoized upstream, so this only fires on a real change.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !loadedRef.current) return
-    const src = map.getSource(BOUNDARY_SOURCE) as mapboxgl.GeoJSONSource | undefined
-    if (!center || radiusKm == null) {
-      src?.setData(EMPTY_FC)
-      return
+
+    // Radius circle/hexagon — drawn only for radius territories.
+    const radiusSrc = map.getSource(BOUNDARY_SOURCE) as
+      | mapboxgl.GeoJSONSource
+      | undefined
+    radiusSrc?.setData(
+      center && radiusKm != null && !placeBoundary
+        ? buildBoundary(center, radiusKm, AREA_SHAPE, AREA_HEX_ROTATION_DEG)
+        : EMPTY_FC,
+    )
+
+    // Official place boundary — drawn only for place territories, and only when
+    // its display toggle is on.
+    const placeSrc = map.getSource(PLACE_SOURCE) as
+      | mapboxgl.GeoJSONSource
+      | undefined
+    placeSrc?.setData(
+      placeBoundary && showPlaceBoundary ? placeFeature(placeBoundary) : EMPTY_FC,
+    )
+
+    const frame = frameFeature()
+    if (frame) {
+      map.fitBounds(turf.bbox(frame) as [number, number, number, number], {
+        padding: 40,
+        duration: 600,
+      })
     }
-    const boundary = buildBoundary(center, radiusKm, AREA_SHAPE, AREA_HEX_ROTATION_DEG)
-    src?.setData(boundary)
-    const frame = outline.features.length ? outline : boundary
-    map.fitBounds(turf.bbox(frame) as [number, number, number, number], {
-      padding: 40,
-      duration: 600,
-    })
-  }, [center, radiusKm, outline])
+  }, [center, radiusKm, outline, placeBoundary, showPlaceBoundary])
 
   if (!MAPBOX_TOKEN) {
     return (

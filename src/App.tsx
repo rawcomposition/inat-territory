@@ -33,8 +33,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { INAT_MAX_PAGES, MAPBOX_TOKEN } from "@/config"
-import { buildCellsOutline, buildHexGrid, markObservedCells } from "@/lib/hexgrid"
+import {
+  buildCellsOutline,
+  buildHexGrid,
+  buildPlaceHexGrid,
+  markObservedCells,
+  PlaceTooLargeError,
+} from "@/lib/hexgrid"
+import type { ObsArea } from "@/lib/inaturalist"
 import { useObservations } from "@/lib/useObservations"
+import { usePlaceGeometry } from "@/lib/usePlaces"
 import { useSettings } from "@/lib/settingsStore"
 import { useTerritoryStore } from "@/lib/territoryStore"
 import {
@@ -133,21 +141,52 @@ function App() {
   )
   const categories = useMemo(() => mapTerritory?.categories ?? [], [mapTerritory])
 
-  const cells = useMemo(
-    () =>
-      center && rKm != null && cellRes != null
-        ? buildHexGrid(center, rKm, cellRes)
-        : [],
-    [center, rKm, cellRes],
-  )
+  // For a place territory, fetch (and cache) the official boundary polygon by
+  // its place id; the grid tiles that polygon instead of a radius hexagon.
+  const place = mapTerritory?.place ?? null
+  const placeGeo = usePlaceGeometry(place?.id)
+  const placeGeometry = placeGeo.data ?? null
+
+  // Build the cell grid for the active territory. A place too detailed for the
+  // chosen cell size yields no cells and a `gridError` surfaced on the card.
+  const { cells, gridError } = useMemo<{
+    cells: ReturnType<typeof buildHexGrid>
+    gridError: string | null
+  }>(() => {
+    if (place) {
+      if (!placeGeometry || cellRes == null) return { cells: [], gridError: null }
+      try {
+        return { cells: buildPlaceHexGrid(placeGeometry, cellRes), gridError: null }
+      } catch (e) {
+        if (e instanceof PlaceTooLargeError) return { cells: [], gridError: e.message }
+        throw e
+      }
+    }
+    return {
+      cells:
+        center && rKm != null && cellRes != null
+          ? buildHexGrid(center, rKm, cellRes)
+          : [],
+      gridError: null,
+    }
+  }, [place, placeGeometry, center, rKm, cellRes])
   const outline = useMemo(() => buildCellsOutline(cells), [cells])
 
   const obscuredNoticeDismissed = useSettings((s) => s.obscuredNoticeDismissed)
 
+  // The area observations are drawn from: a place id for place territories,
+  // else the radius circle.
+  const area = useMemo<ObsArea>(
+    () =>
+      place
+        ? { kind: "place", placeId: place.id }
+        : { kind: "radius", center: center ?? [0, 0], radiusKm: rKm ?? 0 },
+    [place, center, rKm],
+  )
+
   const obs = useObservations(
     mapTerritory?.username ?? "",
-    center ?? [0, 0],
-    rKm ?? 0,
+    area,
     INAT_MAX_PAGES,
     year,
     categories,
@@ -174,7 +213,22 @@ function App() {
   const highlightedCells = grid.features.filter((f) => f.properties.highlighted).length
   const coverage =
     cells.length > 0 ? Math.round((highlightedCells / cells.length) * 100) : 0
-  const settled = !obs.isPending && !obs.isError
+
+  // Place territories also wait on (and can fail at) the boundary fetch, and the
+  // grid can be rejected as too large — fold both into the map territory's
+  // loading/error state alongside the observation query.
+  const placeLoading = Boolean(place) && placeGeo.isLoading
+  const mapPending = obs.isPending || placeLoading
+  const boundaryError = useMemo<Error | null>(() => {
+    if (place && placeGeo.isError) return placeGeo.error as Error
+    if (gridError) return new Error(gridError)
+    return null
+  }, [place, placeGeo.isError, placeGeo.error, gridError])
+  const mapError = (obs.isError ? (obs.error as Error) : null) ?? boundaryError
+
+  // Settled (safe to snapshot stats) only once the grid and observations are
+  // both resolved without error.
+  const settled = !mapPending && !mapError
 
   // Live coverage for the territory currently on the map.
   const liveStats = useMemo<TerritoryStats | undefined>(
@@ -196,6 +250,14 @@ function App() {
   useEffect(() => {
     if (savedMapId && liveStats) setStats(savedMapId, liveStats)
   }, [savedMapId, liveStats, setStats])
+
+  // Retry the active territory's failed fetches — observations always, plus the
+  // place boundary for a place territory (a too-large grid can't be retried, but
+  // re-running is harmless).
+  function retryActive() {
+    obs.refetch()
+    if (place) placeGeo.refetch()
+  }
 
   function clearUrlParams() {
     window.history.replaceState(null, "", window.location.pathname)
@@ -325,7 +387,15 @@ function App() {
 
   return (
     <div className="app-shell relative w-full overflow-hidden">
-      <MapView grid={grid} outline={outline} points={points} center={center} radiusKm={rKm} />
+      <MapView
+        grid={grid}
+        outline={outline}
+        points={points}
+        center={center}
+        radiusKm={place ? null : rKm}
+        placeBoundary={placeGeometry}
+        showPlaceBoundary={mapTerritory?.showPlaceBoundary ?? true}
+      />
 
       <Card className="absolute left-4 top-[calc(env(safe-area-inset-top)_+_1rem)] z-10 flex max-h-[calc(100dvh_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom)_-_2rem)] w-[calc(100vw-2rem)] flex-col overflow-y-auto bg-background/95 backdrop-blur sm:w-[22rem]">
         <CardHeader>
@@ -358,7 +428,9 @@ function App() {
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <StatusBadge state={obsState(obs)} />
+                <StatusBadge
+                  state={mapPending && mapTerritory ? "loading" : obsState(obs)}
+                />
                 {territories.length > 0 && (
                   <span className="rounded-full bg-inat/10 px-2 py-0.5 font-mono text-xs font-bold text-inat-strong">
                     {territories.length}
@@ -411,9 +483,9 @@ function App() {
                           territory={shared}
                           active={previewShared}
                           stats={previewShared ? liveStats : undefined}
-                          pending={previewShared && obs.isPending}
-                          error={previewShared && obs.isError ? (obs.error as Error) : null}
-                          onRetry={() => obs.refetch()}
+                          pending={previewShared && mapPending}
+                          error={previewShared ? mapError : null}
+                          onRetry={retryActive}
                           onActivate={() => setPreviewShared(true)}
                           onSave={openSaveShared}
                           onDismiss={dismissShared}
@@ -427,9 +499,9 @@ function App() {
                             territory={t}
                             active={onMap}
                             stats={onMap && liveStats ? liveStats : t.stats}
-                            pending={onMap && obs.isPending}
-                            error={onMap && obs.isError ? (obs.error as Error) : null}
-                            onRetry={() => obs.refetch()}
+                            pending={onMap && mapPending}
+                            error={onMap ? mapError : null}
+                            onRetry={retryActive}
                             onActivate={() => activateSaved(t.id)}
                             onEdit={() => openEdit(t)}
                             onShare={() => setShareTarget(t)}

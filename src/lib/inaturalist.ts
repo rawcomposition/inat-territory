@@ -21,29 +21,46 @@ const API = "https://api.inaturalist.org/v2/observations"
 const FIELDS = "id,geojson"
 
 /**
- * Fetch a user's georeferenced observations within `radiusKm` of `center`.
- * Pages through results up to `maxPages` (200 results/page). `year` (when not
- * null) limits results to that observation year; `categories` (when non-empty)
- * limits to those iconic taxa.
+ * The area a territory's observations are drawn from: either a circle (radius
+ * territory) or an iNaturalist Standard place (place territory). Maps directly
+ * to the matching observation-query params.
+ */
+export type ObsArea =
+  | { kind: "radius"; center: [number, number]; radiusKm: number }
+  | { kind: "place"; placeId: number }
+
+/** Apply an {@link ObsArea} to the observation query's search params. */
+function applyArea(params: URLSearchParams, area: ObsArea): void {
+  if (area.kind === "place") {
+    params.set("place_id", String(area.placeId))
+    return
+  }
+  const [lng, lat] = area.center
+  params.set("lat", String(lat))
+  params.set("lng", String(lng))
+  params.set("radius", String(area.radiusKm)) // km
+}
+
+/**
+ * Fetch a user's georeferenced observations within `area` (a radius circle or
+ * an iNaturalist place). Pages through results up to `maxPages` (200
+ * results/page). `year` (when not null) limits results to that observation
+ * year; `categories` (when non-empty) limits to those iconic taxa.
  */
 export async function fetchObservations(
   username: string,
-  center: [number, number],
-  radiusKm: number,
+  area: ObsArea,
   maxPages: number,
   year: number | null,
   categories: string[],
 ): Promise<InatObservation[]> {
-  const [lng, lat] = center
   const perPage = 200
   const all: InatObservation[] = []
 
   for (let page = 1; page <= maxPages; page++) {
     const url = new URL(API)
     url.searchParams.set("user_login", username)
-    url.searchParams.set("lat", String(lat))
-    url.searchParams.set("lng", String(lng))
-    url.searchParams.set("radius", String(radiusKm)) // km
+    applyArea(url.searchParams, area)
     url.searchParams.set("geo", "true")
     url.searchParams.set("geoprivacy", "open")
     url.searchParams.set("taxon_geoprivacy", "open")
@@ -90,7 +107,7 @@ export async function fetchObservations(
         throw new Error(
           `This area has ${total.toLocaleString()} matching observations, ` +
             `more than the ${cap.toLocaleString()} we can load at once. ` +
-            `Try a smaller radius or a year filter.`,
+            `Try a smaller area or a year filter.`,
         )
       }
     }

@@ -4,6 +4,7 @@ import type {
   Feature,
   FeatureCollection,
   MultiLineString,
+  MultiPolygon,
   Polygon,
 } from "geojson"
 import type { InatObservation } from "./inaturalist"
@@ -103,6 +104,72 @@ export function buildHexGrid(
     centerCell,
     ...h3.polygonToCells(boundary.geometry.coordinates, resolution, true),
   ])
+
+  return [...indices].map((index) => ({
+    type: "Feature",
+    geometry: h3CellPolygon(index).geometry,
+    properties: { id: index, count: 0, highlighted: false },
+  }))
+}
+
+/**
+ * Largest number of cells a place boundary may tile into. A whole country or
+ * state at a fine cell size would otherwise generate millions of cells and hang
+ * the page, so {@link buildPlaceHexGrid} refuses past this and the UI asks for a
+ * larger cell size.
+ */
+export const PLACE_CELL_CAP = 60_000
+
+/** Thrown by {@link buildPlaceHexGrid} when a place tiles into too many cells. */
+export class PlaceTooLargeError extends Error {
+  constructor() {
+    super(
+      "This place is too detailed for this cell size. Choose a larger cell size.",
+    )
+    this.name = "PlaceTooLargeError"
+  }
+}
+
+/** The loop arrays (outer ring + holes) for each polygon in a geometry. */
+function polygonRings(geometry: Polygon | MultiPolygon): number[][][][] {
+  return geometry.type === "Polygon"
+    ? [geometry.coordinates]
+    : geometry.coordinates
+}
+
+/**
+ * Tile an arbitrary place boundary (an iNaturalist Standard place polygon) into
+ * the same global H3 cells used by radius territories — so a county or state
+ * reads as the same honeycomb, with cells shared across overlapping territories.
+ *
+ * Keeps every cell whose center falls inside the polygon (holes respected).
+ * Guards against runaway sizes: if the boundary would tile into more than
+ * {@link PLACE_CELL_CAP} cells it throws {@link PlaceTooLargeError} rather than
+ * locking up the page.
+ *
+ * @param geometry    GeoJSON Polygon or MultiPolygon in [lng, lat] order
+ * @param resolution  H3 resolution (higher = smaller cells)
+ */
+export function buildPlaceHexGrid(
+  geometry: Polygon | MultiPolygon,
+  resolution: number,
+): HexCell[] {
+  const rings = polygonRings(geometry)
+
+  // Cheap pre-check before generating anything: the boundary's area divided by
+  // the average cell area approximates the eventual cell count closely enough to
+  // reject a too-large request without hanging the page.
+  const areaKm2 = turf.area(geometry) / 1e6
+  const cellAreaKm2 = h3.getHexagonAreaAvg(resolution, h3.UNITS.km2)
+  if (areaKm2 / cellAreaKm2 > PLACE_CELL_CAP) throw new PlaceTooLargeError()
+
+  const indices = new Set<string>()
+  for (const poly of rings) {
+    for (const index of h3.polygonToCells(poly, resolution, true)) {
+      indices.add(index)
+    }
+    if (indices.size > PLACE_CELL_CAP) throw new PlaceTooLargeError()
+  }
 
   return [...indices].map((index) => ({
     type: "Feature",

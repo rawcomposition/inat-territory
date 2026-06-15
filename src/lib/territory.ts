@@ -55,6 +55,19 @@ export function categoryLabel(value: Category): string {
 }
 
 /**
+ * An iNaturalist Standard place chosen as a territory's boundary (in place of a
+ * radius). The boundary polygon itself is not stored here — it's fetched and
+ * cached by `id` (see {@link usePlaceGeometry}) — which keeps the model small and
+ * trivially serializable to shared URLs and the export file.
+ */
+export interface TerritoryPlace {
+  /** iNaturalist place id. */
+  id: number
+  /** Disambiguated display name, e.g. "Marin County, US". */
+  name: string
+}
+
+/**
  * Cached coverage stats for a territory, snapshotted from the last time it was
  * the active (on-map) territory. Lets the list show each card's numbers without
  * re-fetching observations for every territory. Absent until first computed.
@@ -77,13 +90,20 @@ export interface Territory {
   id: string
   /** User-facing label, e.g. "Home patch". */
   name: string
-  /** User-facing [lat, lng] convention. */
+  /** User-facing [lat, lng] convention. For a place territory this is the
+   * place's centroid, kept for map framing before the boundary geometry loads. */
   lat: number
   lng: number
   username: string
   units: Units
-  /** Radius expressed in `units`. */
+  /** Radius expressed in `units`. Ignored when {@link place} is set. */
   radius: number
+  /** When set, the territory's boundary is this iNaturalist place's polygon
+   * rather than a radius; observations are queried by place id. */
+  place?: TerritoryPlace
+  /** Whether to draw the official place boundary outline on the map. Defaults to
+   * true; only meaningful for place territories. */
+  showPlaceBoundary?: boolean
   cellSize: CellSize
   /** Which years of observations to include. */
   year: YearFilter
@@ -115,6 +135,8 @@ export interface TerritoryDraft {
   username: string
   units: Units
   radius: number
+  place?: TerritoryPlace
+  showPlaceBoundary?: boolean
   cellSize: CellSize
   year: YearFilter
   categories: Category[]
@@ -137,6 +159,7 @@ export function defaultDraft(): TerritoryDraft {
     username: "",
     units,
     radius: DEFAULT_RADIUS[units],
+    showPlaceBoundary: true,
     cellSize: DEFAULT_CELL_SIZE,
     year: "all",
     categories: [],
@@ -152,6 +175,8 @@ export function draftFrom(t: Territory): TerritoryDraft {
     username: t.username,
     units: t.units,
     radius: t.radius,
+    place: t.place,
+    showPlaceBoundary: t.showPlaceBoundary,
     cellSize: t.cellSize,
     year: t.year,
     categories: t.categories,
@@ -252,6 +277,10 @@ export function parseTerritoryFromUrl(search: string): Territory | null {
         .filter((s): s is Category => CATEGORY_VALUES.includes(s as Category))
     : []
 
+  const place = parsePlace(p.get("p"), p.get("pn"))
+  // Boundary is shown unless explicitly turned off (pb=0).
+  const showPlaceBoundary = p.get("pb") !== "0"
+
   return {
     id: newTerritoryId(),
     name,
@@ -260,11 +289,29 @@ export function parseTerritoryFromUrl(search: string): Territory | null {
     username,
     units,
     radius,
+    place,
+    showPlaceBoundary,
     cellSize,
     year,
     categories,
     updatedAt: Date.now(),
   }
+}
+
+/**
+ * Build a {@link TerritoryPlace} from a raw id/name pair (from a URL or import
+ * file), or null when the id isn't a valid place id. The name falls back to a
+ * placeholder so a missing label doesn't drop an otherwise valid place.
+ */
+function parsePlace(
+  idRaw: string | number | null | undefined,
+  nameRaw: string | null | undefined,
+): TerritoryPlace | undefined {
+  if (idRaw == null || idRaw === "") return undefined
+  const id = Number(idRaw)
+  if (!Number.isInteger(id) || id <= 0) return undefined
+  const name = (typeof nameRaw === "string" ? nameRaw.trim() : "") || `Place ${id}`
+  return { id, name }
 }
 
 /** Serialize a territory to a query string (leading "?"), with tidy precision. */
@@ -277,6 +324,12 @@ export function serializeTerritoryToUrl(t: Territory): string {
     r: String(round(t.radius, 2)),
     c: t.cellSize,
   })
+  if (t.place) {
+    p.set("p", String(t.place.id))
+    p.set("pn", t.place.name)
+    // Encode only the non-default (hidden) state to keep links tidy.
+    if (t.showPlaceBoundary === false) p.set("pb", "0")
+  }
   if (t.name.trim()) p.set("n", t.name.trim())
   // Only encode non-default filters to keep shared URLs tidy.
   if (t.year !== "all") p.set("y", t.year)
@@ -320,6 +373,8 @@ function toExported(t: Territory): ExportedTerritory {
     username: t.username,
     units: t.units,
     radius: t.radius,
+    place: t.place,
+    showPlaceBoundary: t.showPlaceBoundary,
     cellSize: t.cellSize,
     year: t.year,
     categories: t.categories,
@@ -373,6 +428,12 @@ function parseTerritoryRecord(raw: unknown): Territory | null {
       )
     : []
 
+  const placeRaw = r.place as Record<string, unknown> | undefined
+  const place = parsePlace(
+    typeof placeRaw?.id === "number" ? placeRaw.id : undefined,
+    typeof placeRaw?.name === "string" ? placeRaw.name : undefined,
+  )
+
   return {
     id: typeof r.id === "string" && r.id ? r.id : newTerritoryId(),
     name: typeof r.name === "string" ? r.name : "",
@@ -381,6 +442,8 @@ function parseTerritoryRecord(raw: unknown): Territory | null {
     username: r.username.trim(),
     units,
     radius,
+    place,
+    showPlaceBoundary: r.showPlaceBoundary !== false,
     cellSize,
     year,
     categories,
